@@ -40,22 +40,35 @@ class Hospital_appointments_model extends App_Model
     /**
      * Get all consultants (users with Consultant role)
      */
-    public function get_consultants()
-    {
-        // Get Consultant role ID
-        $consultant_role = $this->db->get_where(db_prefix() . 'roles', ['name' => 'Consultant'])->row();
-        
-        if (!$consultant_role) {
-            return [];
-        }
-        
-        $this->db->select('staffid, firstname, lastname, email');
+   public function get_consultants()
+{
+    // FIXED: Case-insensitive search with fallback
+    $this->db->select('roleid');
+    $this->db->where('LOWER(name)', 'consultant');
+    $consultant_role = $this->db->get(db_prefix() . 'roles')->row();
+    
+    // Build query for staff
+    $this->db->select('staffid, firstname, lastname, email, role');
+    $this->db->where('active', 1);
+    
+    // If Consultant role exists, filter by it
+    if ($consultant_role) {
         $this->db->where('role', $consultant_role->roleid);
-        $this->db->where('active', 1);
-        $this->db->order_by('firstname', 'ASC');
-        return $this->db->get(db_prefix() . 'staff')->result_array();
+    } else {
+        // FALLBACK: Show all active staff if role doesn't exist
+        log_activity('Warning: Consultant role not found, showing all staff');
     }
     
+    $this->db->order_by('firstname', 'ASC');
+    $consultants = $this->db->get(db_prefix() . 'staff')->result_array();
+    
+    // Add formatted name
+    foreach ($consultants as &$consultant) {
+        $consultant['full_name'] = $consultant['firstname'] . ' ' . $consultant['lastname'];
+    }
+    
+    return $consultants;
+}
     /**
      * Get appointment by ID
      */
@@ -74,21 +87,38 @@ class Hospital_appointments_model extends App_Model
     }
     
     /**
-     * Get all appointments
-     */
-    public function get_all()
-    {
-        $this->db->select($this->table . '.*, ' . 
-                         db_prefix() . 'hospital_patients.name as patient_name, ' .
-                         db_prefix() . 'hospital_patients.mobile_number as patient_mobile, ' .
-                         db_prefix() . 'hospital_patients.patient_number as patient_number, ' .
-                         db_prefix() . 'staff.firstname as consultant_firstname, ' .
-                         db_prefix() . 'staff.lastname as consultant_lastname');
-        $this->db->join(db_prefix() . 'hospital_patients', db_prefix() . 'hospital_patients.id = ' . $this->table . '.patient_id', 'left');
-        $this->db->join(db_prefix() . 'staff', db_prefix() . 'staff.staffid = ' . $this->table . '.consultant_id', 'left');
-        $this->db->order_by($this->table . '.appointment_date', 'DESC');
-        return $this->db->get($this->table)->result();
-    }
+ * Get all appointments with LEFT JOIN to handle missing consultants
+ */
+public function get_all()
+{
+    $this->db->select(
+        $this->table . '.*, ' . 
+        db_prefix() . 'hospital_patients.name as patient_name, ' .
+        db_prefix() . 'hospital_patients.mobile_number as patient_mobile, ' .
+        db_prefix() . 'hospital_patients.patient_number as patient_number, ' .
+        'COALESCE(' . db_prefix() . 'staff.firstname, "Not Assigned") as consultant_firstname, ' .
+        'COALESCE(' . db_prefix() . 'staff.lastname, "") as consultant_lastname'
+    );
+    
+    // LEFT JOIN patients (required)
+    $this->db->join(
+        db_prefix() . 'hospital_patients', 
+        db_prefix() . 'hospital_patients.id = ' . $this->table . '.patient_id', 
+        'left'
+    );
+    
+    // LEFT JOIN staff (consultant) - handle NULL consultant_id
+    $this->db->join(
+        db_prefix() . 'staff', 
+        db_prefix() . 'staff.staffid = ' . $this->table . '.consultant_id', 
+        'left'
+    );
+    
+    $this->db->order_by($this->table . '.appointment_date', 'DESC');
+    $this->db->order_by($this->table . '.appointment_time', 'DESC');
+    
+    return $this->db->get($this->table)->result();
+}
     
 /**
  * Save appointment with patient data (for existing/walk-in patients)

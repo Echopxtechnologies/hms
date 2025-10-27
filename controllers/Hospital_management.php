@@ -740,14 +740,11 @@ class Hospital_management extends AdminController
 public function patient_records()
 {
     // Check permissions
-    if (!is_hospital_staff()) {
-        access_denied('Hospital Management');
+    if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
+        access_denied('Patient Records');
     }
     
-    // Load model
-    $this->load->model('hospital_management/hospital_patients_model');
-    
-    // Get all patients
+    // FIXED: Model already loaded in constructor, just use it
     $data['patients'] = $this->hospital_patients_model->get_all();
     
     // Get statistics
@@ -757,11 +754,10 @@ public function patient_records()
         'today_registrations' => $this->hospital_patients_model->get_today_registrations_count()
     ];
     
-    // Set page title
     $data['title'] = 'Patient Records';
     
-    // Load view
-    $this->load->view('hospital_management/patient_records', $data);
+    // FIXED: Load view without subdirectory prefix
+    $this->load->view('patient_records', $data);
 }
 
 /**
