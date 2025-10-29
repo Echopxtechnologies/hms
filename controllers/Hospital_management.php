@@ -172,18 +172,7 @@ class Hospital_management extends AdminController
         echo json_encode($result);
     }
     
-    /**
-     * Roles Management
-     */
-    public function roles()
-    {
-        if (!is_hospital_administrator() && !has_permission('hospital_users', '', 'view')) {
-            access_denied('Hospital Management');
-        }
-        
-        $data['title'] = 'Role Management';
-        $this->load->view('roles', $data);
-    }
+  
     
     /**
      * Create role
@@ -241,32 +230,7 @@ class Hospital_management extends AdminController
         echo json_encode($roles);
     }
     
-    /**
-     * Delete role
-     */
-    public function delete_role($role_id)
-    {
-        if (!$this->input->is_ajax_request()) {
-            show_404();
-        }
-        
-        if (!is_hospital_administrator() && !has_permission('hospital_users', '', 'delete')) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'No permission']);
-            return;
-        }
-        
-        if ($role_id == 6) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Cannot delete Admin role']);
-            return;
-        }
-        
-        $result = $this->hospital_users_model->delete_role($role_id);
-        
-        header('Content-Type: application/json');
-        echo json_encode($result);
-    }
+ 
     
     /**
      * Get permissions for a role
@@ -960,5 +924,74 @@ public function get_consultant_statistics()
     
     header('Content-Type: application/json');
     echo json_encode(['success' => true, 'data' => $stats]);
+}
+
+
+// helpers
+public function roles()
+{
+    if (!is_hospital_administrator() && !has_permission('hospital_users', '', 'view')) {
+        access_denied('Hospital Management');
+    }
+    
+    $this->load->model('roles_model');
+    $all_roles = $this->roles_model->get();
+    
+    $roles_with_count = [];
+    foreach ($all_roles as $role) {
+        $this->db->where('role_id', $role['roleid']);
+        $this->db->where('active', 1);
+        $count = $this->db->count_all_results(db_prefix() . 'hospital_users');
+        
+        $role['total_users'] = $count;
+        $roles_with_count[] = $role;
+    }
+    
+    $data['title'] = 'Role Management';
+    $data['roles'] = $roles_with_count;
+    $this->load->view('roles', $data);
+}
+public function delete_role($role_id)
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    if (!is_hospital_administrator() && !has_permission('hospital_users', '', 'delete')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'No permission to delete roles']);
+        return;
+    }
+    
+    // Cannot delete Admin role
+    if ($role_id == 1) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Cannot delete Admin role']);
+        return;
+    }
+    
+    // Check if role has users
+    $this->db->where('role_id', $role_id);
+    $this->db->where('active', 1);
+    $user_count = $this->db->count_all_results(db_prefix() . 'hospital_users');
+    
+    if ($user_count > 0) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Cannot delete role with assigned users. Please reassign users first.']);
+        return;
+    }
+    
+    // Delete role
+    $this->load->model('roles_model');
+    $deleted = $this->roles_model->delete($role_id);
+    
+    if ($deleted) {
+        log_activity('Hospital Role Deleted [ID: ' . $role_id . ']');
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'Role deleted successfully']);
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Failed to delete role']);
+    }
 }
 }

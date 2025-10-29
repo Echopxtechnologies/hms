@@ -7,7 +7,6 @@ class Consultant_portal_model extends App_Model
     private $appointments_table;
     private $patients_table;
     private $staff_table;
-    private $hospital_users_table;
     
     public function __construct()
     {
@@ -15,15 +14,8 @@ class Consultant_portal_model extends App_Model
         $this->appointments_table = db_prefix() . 'hospital_appointments';
         $this->patients_table = db_prefix() . 'hospital_patients';
         $this->staff_table = db_prefix() . 'staff';
-        $this->hospital_users_table = db_prefix() . 'hospital_users';
     }
     
-    /**
-     * Get appointments based on role
-     * @param int $staff_id - Current logged in staff ID
-     * @param bool $is_jc - Is Junior Consultant?
-     * @return array
-     */
     public function get_appointments($staff_id, $is_jc = false)
     {
         $this->db->select(
@@ -41,22 +33,11 @@ class Consultant_portal_model extends App_Model
         $this->db->from($this->appointments_table);
         $this->db->join($this->patients_table, $this->patients_table . '.id = ' . $this->appointments_table . '.patient_id', 'left');
         
-        // CRITICAL FIX: Join through hospital_users to match consultant_id properly
-        $this->db->join(
-            $this->hospital_users_table, 
-            $this->hospital_users_table . '.id = ' . $this->appointments_table . '.consultant_id', 
-            'left'
-        );
-        $this->db->join(
-            $this->staff_table, 
-            $this->staff_table . '.staffid = ' . $this->hospital_users_table . '.staff_id', 
-            'left'
-        );
+        // FIXED: Direct join to staff table
+        $this->db->join($this->staff_table, $this->staff_table . '.staffid = ' . $this->appointments_table . '.consultant_id', 'left');
         
-        // JC sees all, Consultant sees only their own
         if (!$is_jc) {
-            // Filter by staff_id in hospital_users table
-            $this->db->where($this->hospital_users_table . '.staff_id', $staff_id);
+            $this->db->where($this->appointments_table . '.consultant_id', $staff_id);
         }
         
         $this->db->order_by($this->appointments_table . '.appointment_date', 'DESC');
@@ -65,11 +46,6 @@ class Consultant_portal_model extends App_Model
         return $this->db->get()->result_array();
     }
     
-    /**
-     * Get single appointment with full details
-     * @param int $appointment_id
-     * @return object|null
-     */
     public function get($appointment_id)
     {
         $this->db->select(
@@ -90,86 +66,50 @@ class Consultant_portal_model extends App_Model
         
         $this->db->from($this->appointments_table);
         $this->db->join($this->patients_table, $this->patients_table . '.id = ' . $this->appointments_table . '.patient_id', 'left');
-        
-        // CRITICAL FIX: Join through hospital_users
-        $this->db->join(
-            $this->hospital_users_table, 
-            $this->hospital_users_table . '.id = ' . $this->appointments_table . '.consultant_id', 
-            'left'
-        );
-        $this->db->join(
-            $this->staff_table, 
-            $this->staff_table . '.staffid = ' . $this->hospital_users_table . '.staff_id', 
-            'left'
-        );
-        
+        $this->db->join($this->staff_table, $this->staff_table . '.staffid = ' . $this->appointments_table . '.consultant_id', 'left');
         $this->db->where($this->appointments_table . '.id', $appointment_id);
         
         return $this->db->get()->row_array();
     }
     
-    /**
-     * Check if consultant has access to this appointment
-     * @param int $appointment_id
-     * @param int $staff_id
-     * @return bool
-     */
     public function can_access($appointment_id, $staff_id)
     {
-        // Join through hospital_users to check access
         $this->db->select($this->appointments_table . '.id');
         $this->db->from($this->appointments_table);
-        $this->db->join(
-            $this->hospital_users_table, 
-            $this->hospital_users_table . '.id = ' . $this->appointments_table . '.consultant_id', 
-            'inner'
-        );
         $this->db->where($this->appointments_table . '.id', $appointment_id);
-        $this->db->where($this->hospital_users_table . '.staff_id', $staff_id);
+        $this->db->where($this->appointments_table . '.consultant_id', $staff_id);
         
         return $this->db->count_all_results() > 0;
     }
     
-    /**
-     * Get statistics
-     * @param int $staff_id
-     * @param bool $is_jc
-     * @return array
-     */
     public function get_statistics($staff_id, $is_jc = false)
     {
         $stats = [];
         
-        // Build base query with hospital_users join
-        $base_query = function($is_jc, $staff_id) {
+        $apply_filter = function() use ($is_jc, $staff_id) {
             if (!$is_jc) {
-                $this->db->join(
-                    $this->hospital_users_table, 
-                    $this->hospital_users_table . '.id = ' . $this->appointments_table . '.consultant_id', 
-                    'inner'
-                );
-                $this->db->where($this->hospital_users_table . '.staff_id', $staff_id);
+                $this->db->where('consultant_id', $staff_id);
             }
         };
         
-        // Total
-        $base_query($is_jc, $staff_id);
-        $stats['total'] = $this->db->count_all_results($this->appointments_table);
+        $this->db->from($this->appointments_table);
+        $apply_filter();
+        $stats['total'] = $this->db->count_all_results();
         
-        // Pending
+        $this->db->from($this->appointments_table);
         $this->db->where('status', 'pending');
-        $base_query($is_jc, $staff_id);
-        $stats['pending'] = $this->db->count_all_results($this->appointments_table);
+        $apply_filter();
+        $stats['pending'] = $this->db->count_all_results();
         
-        // Confirmed
+        $this->db->from($this->appointments_table);
         $this->db->where('status', 'confirmed');
-        $base_query($is_jc, $staff_id);
-        $stats['confirmed'] = $this->db->count_all_results($this->appointments_table);
+        $apply_filter();
+        $stats['confirmed'] = $this->db->count_all_results();
         
-        // Today
+        $this->db->from($this->appointments_table);
         $this->db->where('appointment_date', date('Y-m-d'));
-        $base_query($is_jc, $staff_id);
-        $stats['today'] = $this->db->count_all_results($this->appointments_table);
+        $apply_filter();
+        $stats['today'] = $this->db->count_all_results();
         
         return $stats;
     }

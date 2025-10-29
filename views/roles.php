@@ -2,8 +2,7 @@
 <?php init_head(); ?>
 
 <style>
-/* Minimal Role Management */
-.role-header {
+.page-header {
     background: #f9fafb;
     border: 1px solid #d5dce2;
     border-radius: 4px;
@@ -14,77 +13,28 @@
     align-items: center;
 }
 
-.role-header h4 {
+.page-header h4 {
     margin: 0;
     font-size: 18px;
     font-weight: 600;
     color: #333333;
 }
 
-.role-card {
-    background: #ffffff;
-    border: 1px solid #d5dce2;
-    border-radius: 4px;
-    padding: 25px;
-    margin-bottom: 25px;
-    transition: all 0.2s ease;
+.role-users {
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.role-card:hover {
-    border-color: #333333;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+.role-users .badge {
+    margin-right: 5px;
+    margin-bottom: 3px;
 }
 
-.role-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-.role-name {
-    font-size: 18px;
-    font-weight: 600;
-    color: #333333;
-    margin: 0;
-}
-
-.role-count {
-    background: #e9ecef;
-    color: #333333;
-    padding: 6px 14px;
-    border-radius: 3px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.role-info {
-    display: flex;
-    gap: 30px;
-    margin-bottom: 20px;
-}
-
-.role-stat {
-    flex: 1;
-}
-
-.role-stat-label {
+.action-btn {
+    padding: 4px 8px;
     font-size: 12px;
-    color: #6c757d;
-    margin-bottom: 5px;
-}
-
-.role-stat-value {
-    font-size: 20px;
-    font-weight: 600;
-    color: #333333;
-}
-
-.role-actions {
-    padding-top: 15px;
-    border-top: 1px solid #f0f0f0;
 }
 </style>
 
@@ -92,17 +42,98 @@
     <div class="content">
         <div class="row">
             <div class="col-md-12">
-                <div class="role-header">
+                <div class="page-header">
                     <h4><i class="fa fa-shield"></i> Role Management</h4>
                     <button class="btn btn-dark" data-toggle="modal" data-target="#createRoleModal">
                         <i class="fa fa-plus"></i> Create New Role
                     </button>
                 </div>
+
+                <div class="panel_s">
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover dt-table">
+                                <thead>
+                                    <tr>
+                                        <th width="10%">Role ID</th>
+                                        <th width="20%">Role Name</th>
+                                        <th width="10%">Total Users</th>
+                                        <th width="45%">Assigned Users</th>
+                                        <th width="15%" class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($roles)): ?>
+                                        <?php foreach ($roles as $role): ?>
+                                            <?php 
+                                            // Skip Admin role
+                                            if ($role['roleid'] == 1 || strtolower($role['name']) == 'admin') {
+                                                continue;
+                                            }
+                                            ?>
+                                            <tr>
+                                                <td>
+                                                    <strong class="text-primary">#<?php echo $role['roleid']; ?></strong>
+                                                </td>
+                                                <td>
+                                                    <strong><?php echo htmlspecialchars($role['name']); ?></strong>
+                                                </td>
+                                                <td>
+                                                    <span class="label label-default">
+                                                        <?php echo isset($role['total_users']) ? $role['total_users'] : 0; ?> Users
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="role-users">
+                                                        <?php if (!empty($role['users'])): ?>
+                                                            <?php foreach ($role['users'] as $user): ?>
+                                                                <span class="badge badge-info">
+                                                                    <?php echo htmlspecialchars($user['first_name'] . ' ' . $user['last_name']); ?>
+                                                                </span>
+                                                            <?php endforeach; ?>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">No users assigned</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                                <td class="text-center">
+                                                    <a href="<?php echo admin_url('hospital_management/users?role=' . $role['roleid']); ?>" 
+                                                       class="btn btn-default btn-xs action-btn" 
+                                                       title="View Users">
+                                                        <i class="fa fa-users"></i> View
+                                                    </a>
+                                                    
+                                                    <?php if ($role['total_users'] == 0): ?>
+                                                        <button class="btn btn-danger btn-xs action-btn btn-delete-role" 
+                                                                data-id="<?php echo $role['roleid']; ?>"
+                                                                data-name="<?php echo htmlspecialchars($role['name']); ?>"
+                                                                title="Delete Role">
+                                                            <i class="fa fa-trash"></i> Delete
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <button class="btn btn-default btn-xs action-btn" 
+                                                                disabled
+                                                                title="Cannot delete role with assigned users">
+                                                            <i class="fa fa-trash"></i> Delete
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">
+                                                <i class="fa fa-info-circle"></i> No roles found
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
             </div>
-        </div>
-        
-        <div class="row" id="rolesContainer">
-            <!-- Roles will be loaded here -->
         </div>
     </div>
 </div>
@@ -112,9 +143,7 @@
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
                 <h4 class="modal-title"><i class="fa fa-plus"></i> Create New Role</h4>
             </div>
             <div class="modal-body">
@@ -123,21 +152,17 @@
                         <label for="role_name" class="control-label">
                             Role Name <span class="text-danger">*</span>
                         </label>
-                        <input type="text" 
-                               id="role_name" 
-                               name="role_name" 
-                               class="form-control" 
-                               placeholder="e.g., Doctor, Nurse, Receptionist"
-                               required>
+                        <input type="text" id="role_name" name="role_name" class="form-control" 
+                               placeholder="e.g., Doctor, Nurse, Receptionist" required>
                         <span class="help-block">Enter a unique name for this role</span>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-clean" data-dismiss="modal">
+                <button type="button" class="btn btn-default" data-dismiss="modal">
                     <i class="fa fa-times"></i> Cancel
                 </button>
-                <button type="button" id="saveRoleBtn" class="btn btn-dark">
+                <button type="button" id="saveRoleBtn" class="btn btn-primary">
                     <i class="fa fa-check"></i> Create Role
                 </button>
             </div>
@@ -149,64 +174,8 @@
 
 <script>
 $(document).ready(function() {
-    loadRoles();
     
-    function loadRoles() {
-        $.ajax({
-            url: admin_url + 'hospital_management/get_roles',
-            type: 'GET',
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    displayRoles(response.roles);
-                } else {
-                    $('#rolesContainer').html('<div class="col-md-12"><p style="text-align: center; color: #999;">No roles found</p></div>');
-                }
-            }
-        });
-    }
-    
-    function displayRoles(roles) {
-        let html = '';
-        
-        $.each(roles, function(index, role) {
-            if (role.roleid == 6) return true;
-            
-            html += `
-                <div class="col-md-4">
-                    <div class="role-card">
-                        <div class="role-card-header">
-                            <h5 class="role-name">${role.name}</h5>
-                            <span class="role-count">${role.user_count || 0} Users</span>
-                        </div>
-                        
-                        <div class="role-info">
-                            <div class="role-stat">
-                                <div class="role-stat-label">Role ID</div>
-                                <div class="role-stat-value">#${role.roleid}</div>
-                            </div>
-                            <div class="role-stat">
-                                <div class="role-stat-label">Status</div>
-                                <div class="role-stat-value" style="color: #28a745;">
-                                    <i class="fa fa-check"></i>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="role-actions">
-                            <a href="${admin_url}hospital_management/users?role=${role.roleid}" 
-                               class="btn btn-outline-dark btn-block">
-                                <i class="fa fa-users"></i> View Users
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        
-        $('#rolesContainer').html(html);
-    }
-    
+    // Create role
     $('#saveRoleBtn').on('click', function() {
         const roleName = $('#role_name').val().trim();
         
@@ -221,7 +190,7 @@ $(document).ready(function() {
         }
         
         const $btn = $(this);
-        $btn.addClass('btn-loading').prop('disabled', true);
+        $btn.addClass('disabled').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Creating...');
         
         $.ajax({
             url: admin_url + 'hospital_management/create_role',
@@ -233,17 +202,44 @@ $(document).ready(function() {
                     alert_float('success', response.message);
                     $('#createRoleModal').modal('hide');
                     $('#createRoleForm')[0].reset();
-                    loadRoles();
+                    setTimeout(function() { location.reload(); }, 1000);
                 } else {
                     alert_float('danger', response.message);
+                    $btn.removeClass('disabled').prop('disabled', false).html('<i class="fa fa-check"></i> Create Role');
                 }
-                $btn.removeClass('btn-loading').prop('disabled', false);
             },
-            error: function() {
-                alert_float('danger', 'An error occurred');
-                $btn.removeClass('btn-loading').prop('disabled', false);
+            error: function(xhr) {
+                console.error('Create Role Error:', xhr);
+                alert_float('danger', 'An error occurred while creating role');
+                $btn.removeClass('disabled').prop('disabled', false).html('<i class="fa fa-check"></i> Create Role');
             }
         });
+    });
+    
+    // Delete role
+    $(document).on('click', '.btn-delete-role', function() {
+        const roleId = $(this).data('id');
+        const roleName = $(this).data('name');
+        
+        if (confirm('⚠️ WARNING: Delete role "' + roleName + '"?\n\nThis action cannot be undone.\n\nAre you sure?')) {
+            $.ajax({
+                url: admin_url + 'hospital_management/delete_role/' + roleId,
+                type: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        alert_float('success', response.message);
+                        setTimeout(function() { location.reload(); }, 1000);
+                    } else {
+                        alert_float('danger', response.message);
+                    }
+                },
+                error: function(xhr) {
+                    console.error('Delete Role Error:', xhr);
+                    alert_float('danger', 'An error occurred while deleting role');
+                }
+            });
+        }
     });
 });
 </script>
