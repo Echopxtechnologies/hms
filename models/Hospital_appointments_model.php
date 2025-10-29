@@ -40,31 +40,29 @@ class Hospital_appointments_model extends App_Model
     /**
      * Get all consultants (users with Consultant role)
      */
-   public function get_consultants()
+/**
+ * FIXED: Get consultants from hospital_users OR staff table
+ */
+public function get_consultants()
 {
-    // FIXED: Case-insensitive search with fallback
-    $this->db->select('roleid');
-    $this->db->where('LOWER(name)', 'consultant');
-    $consultant_role = $this->db->get(db_prefix() . 'roles')->row();
+    // PRIMARY: Get from hospital_users table
+    $this->db->select('
+        hu.id,
+        hu.staff_id,
+        hu.first_name,
+        hu.last_name,
+        hu.email,
+        hu.phone_number
+    ');
+    $this->db->from(db_prefix() . 'hospital_users hu');
+    $this->db->where('hu.active', 1);
+    $this->db->order_by('hu.first_name', 'ASC');
     
-    // Build query for staff
-    $this->db->select('staffid, firstname, lastname, email, role');
-    $this->db->where('active', 1);
+    $consultants = $this->db->get()->result_array();
     
-    // If Consultant role exists, filter by it
-    if ($consultant_role) {
-        $this->db->where('role', $consultant_role->roleid);
-    } else {
-        // FALLBACK: Show all active staff if role doesn't exist
-        log_activity('Warning: Consultant role not found, showing all staff');
-    }
-    
-    $this->db->order_by('firstname', 'ASC');
-    $consultants = $this->db->get(db_prefix() . 'staff')->result_array();
-    
-    // Add formatted name
-    foreach ($consultants as &$consultant) {
-        $consultant['full_name'] = $consultant['firstname'] . ' ' . $consultant['lastname'];
+    // Add full_name for convenience
+    foreach ($consultants as &$c) {
+        $c['full_name'] = $c['first_name'] . ' ' . $c['last_name'];
     }
     
     return $consultants;

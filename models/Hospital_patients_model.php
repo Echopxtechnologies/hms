@@ -91,7 +91,101 @@ class Hospital_patients_model extends App_Model
         $this->db->order_by('created_at', 'DESC');
         return $this->db->get($this->table)->result();
     }
+    /**
+ * Validate patient data before save
+ */
+private function validate_patient_data($data, $id = null)
+{
+    $errors = [];
     
+    // Required fields
+    if (empty($data['name'])) {
+        $errors[] = 'Patient name is required';
+    }
+    
+    if (empty($data['mobile_number'])) {
+        $errors[] = 'Mobile number is required';
+    } else {
+        // Validate mobile format (Indian 10-digit)
+        if (!preg_match('/^[6-9]\d{9}$/', $data['mobile_number'])) {
+            $errors[] = 'Invalid mobile number format (must be 10 digits starting with 6-9)';
+        }
+        
+        // Check duplicate mobile (skip for same patient during update)
+        $this->db->where('mobile_number', $data['mobile_number']);
+        if ($id) {
+            $this->db->where('id !=', $id);
+        }
+        $existing = $this->db->get($this->table)->row();
+        
+        if ($existing) {
+            $errors[] = 'Mobile number already registered (Patient: ' . $existing->patient_number . ')';
+        }
+    }
+    
+    // Email validation (if provided)
+    if (!empty($data['email'])) {
+        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Invalid email format';
+        }
+        
+        // Check duplicate email (skip for same patient during update)
+        $this->db->where('email', strtolower(trim($data['email'])));
+        if ($id) {
+            $this->db->where('id !=', $id);
+        }
+        $existing = $this->db->get($this->table)->row();
+        
+        if ($existing) {
+            $errors[] = 'Email already registered (Patient: ' . $existing->patient_number . ')';
+        }
+    }
+    
+    // Required fields based on mode
+    if (isset($data['mode']) && $data['mode'] === 'walk_in') {
+        if (empty($data['gender'])) {
+            $errors[] = 'Gender is required for walk-in patients';
+        }
+        
+        if (empty($data['patient_type'])) {
+            $errors[] = 'Patient type is required for walk-in patients';
+        }
+    }
+    
+    // Required for all new patients
+    if (empty($data['reason_for_appointment'])) {
+        $errors[] = 'Reason for appointment is required';
+    }
+    
+    if (empty($data['patient_type'])) {
+        $errors[] = 'Patient type is required';
+    }
+    
+    return $errors;
+}
+
+/**
+ * Get patients for dropdown with optional search
+ */
+public function get_patients_for_dropdown($search = '')
+{
+    $this->db->select('id, patient_number, name, mobile_number, email, patient_type');
+    $this->db->where('status', 'active');
+    
+    if (!empty($search)) {
+        $this->db->group_start();
+        $this->db->like('patient_number', $search);
+        $this->db->or_like('name', $search);
+        $this->db->or_like('mobile_number', $search);
+        $this->db->group_end();
+        $this->db->limit(50);
+    } else {
+        $this->db->limit(100);
+    }
+    
+    $this->db->order_by('created_at', 'DESC');
+    return $this->db->get($this->table)->result_array();
+}
     /**
  * Save patient (Add or Update) - UPDATED VERSION
  */

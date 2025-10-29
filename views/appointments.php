@@ -279,7 +279,7 @@
                 <h4 class="modal-title"><i class="fa fa-calendar-plus-o"></i> Create New Appointment</h4>
             </div>
             <div class="modal-body">
-                <form id="appointmentForm" enctype="multipart/form-data">
+                <?php echo form_open_multipart('', ['id' => 'appointmentForm']); ?>
                     <!-- Hidden field to indicate full form shown -->
                     <input type="hidden" name="show_full_patient_form" id="show_full_patient_form" value="0">
                     
@@ -1002,21 +1002,33 @@
 <!-- ============ END TIME FIELD ============ -->
                     
                     <!-- FIXED: Consultant dropdown always visible -->
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="form-group">
-                                <label for="consultant_id" class="control-label">Consultant *</label>
-                                <select id="consultant_id" name="consultant_id" class="form-control selectpicker" data-live-search="true" required>
-                                    <option value="">-- Select Consultant --</option>
-                                    <?php foreach ($consultants as $consultant) { ?>
-                                    <option value="<?php echo $consultant['staffid']; ?>">
-                                        <?php echo $consultant['firstname'] . ' ' . $consultant['lastname']; ?>
-                                    </option>
-                                    <?php } ?>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
+               <!-- Consultant Dropdown - Fetches Active Consultants Only -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="form-group">
+            <label for="consultant_id" class="control-label">
+                <?php echo _l('consultant'); ?> 
+                <span class="text-danger">*</span>
+            </label>
+           <select id="consultant_id" name="consultant_id" class="form-control selectpicker" data-live-search="true" data-width="100%" required>
+    <option value="">-- Select Consultant --</option>
+    <?php if (!empty($consultants)) { ?>
+        <?php foreach ($consultants as $consultant) { ?>
+            <option value="<?php echo $consultant['id']; ?>">
+                <?php echo $consultant['first_name'] . ' ' . $consultant['last_name']; ?>
+                <?php if (!empty($consultant['email'])) { ?>
+                    (<?php echo $consultant['email']; ?>)
+                <?php } ?>
+            </option>
+        <?php } ?>
+    <?php } else { ?>
+        <option value="" disabled>No consultants found</option>
+    <?php } ?>
+</select>
+            <?php echo form_error('consultant_id', '<small class="text-danger">', '</small>'); ?>
+        </div>
+    </div>
+</div>
                     
                     <div class="row">
                         <div class="col-md-12">
@@ -1027,7 +1039,7 @@
                         </div>
                     </div>
                     
-                </form>
+                <?php echo form_close(); ?>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-default" data-dismiss="modal">
@@ -1069,6 +1081,8 @@
 <?php init_tail(); ?>
 
 <script>
+let csrfTokenName = '<?php echo $this->security->get_csrf_token_name(); ?>';
+let csrfTokenHash = '<?php echo $this->security->get_csrf_hash(); ?>';
 $(document).ready(function() {
     // Initialize selectpicker
     $('.selectpicker').selectpicker();
@@ -1245,6 +1259,57 @@ $(document).ready(function() {
         }
     });
     
+    // Force show form fields when modal opens
+$('#appointmentModal').on('shown.bs.modal', function() {
+    console.log('Modal opened');
+    // Make sure sections are properly initialized
+    const patientType = $('input[name="patient_type_option"]:checked').val();
+    if (patientType === 'new') {
+        const mode = $('input[name="patient_mode"]:checked').val();
+        if (mode === 'appointment') {
+            $('#newPatientFields').show();
+            $('#walkInFields').hide();
+        } else if (mode === 'walkin') {
+            $('#newPatientFields').hide();
+            $('#walkInFields').show();
+        }
+    }
+});
+
+// Also trigger when patient type changes
+$('input[name="patient_type_option"]').on('change', function() {
+    const type = $(this).val();
+    console.log('Patient type changed to:', type);
+    
+    if (type === 'new') {
+        $('#modeSelection').show();
+        // Trigger mode check
+        const mode = $('input[name="patient_mode"]:checked').val();
+        if (mode) {
+            if (mode === 'appointment') {
+                $('#newPatientFields').show();
+                $('#walkInFields').hide();
+            } else if (mode === 'walkin') {
+                $('#newPatientFields').hide();
+                $('#walkInFields').show();
+            }
+        }
+    }
+});
+
+// Ensure mode selection works
+$('input[name="patient_mode"]').on('change', function() {
+    const mode = $(this).val();
+    console.log('Patient mode changed to:', mode);
+    
+    if (mode === 'appointment') {
+        $('#newPatientFields').show();
+        $('#walkInFields').hide();
+    } else if (mode === 'walkin') {
+        $('#newPatientFields').hide();
+        $('#walkInFields').show();
+    }
+});
     // Reset modal on close
     $('#appointmentModal').on('hidden.bs.modal', function() {
         $('#appointmentForm')[0].reset();
@@ -1283,26 +1348,50 @@ function loadPatients() {
         }
     });
 }
-
 function saveExistingPatientAppointment() {
     const patientId = $('#existing_patient_id').val();
     const patientMode = $('input[name="existing_patient_mode"]:checked').val();
     
+    // ========== VALIDATION ==========
     if (!patientId) {
         alert_float('warning', 'Please select a patient');
         return;
     }
     
     if (!patientMode) {
-        alert_float('warning', 'Please select appointment mode');
+        alert_float('warning', 'Please select appointment mode (Appointment or Walk-in)');
+        return;
+    }
+    
+    // Validate appointment fields
+    if (!$('#appointment_date').val()) {
+        alert_float('warning', 'Please select appointment date');
+        return;
+    }
+    
+    if (!$('#appointment_time').val()) {
+        alert_float('warning', 'Please select appointment time');
+        return;
+    }
+    
+    if (!$('#reason_for_appointment').val()) {
+        alert_float('warning', 'Please select reason for appointment');
+        return;
+    }
+    
+    if (!$('#consultant_id').val()) {
+        alert_float('warning', 'Please select consultant');
         return;
     }
     
     const $btn = $('#saveAppointmentBtn');
-    $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
+    $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Creating...');
     
-    // Create FormData to handle file uploads
+    // Create FormData
     const formData = new FormData();
+    
+    // CSRF Token
+    formData.append(csrfTokenName, csrfTokenHash);
     
     // Appointment data
     formData.append('patient_id', patientId);
@@ -1312,47 +1401,70 @@ function saveExistingPatientAppointment() {
     formData.append('appointment_date', $('#appointment_date').val());
     formData.append('appointment_time', $('#appointment_time').val());
     formData.append('consultant_id', $('#consultant_id').val());
-    formData.append('notes', $('#notes').val());
-    formData.append('show_full_patient_form', $('#show_full_patient_form').val());
+    formData.append('notes', $('#notes').val() || '');
     
-    // Patient data (if full form shown - walk-in mode)
-    if ($('#show_full_patient_form').val() == '1') {
-        formData.append('patient_name', $('#existing_patient_name').val());
-        formData.append('gender', $('#existing_gender').val());
-        formData.append('age', $('#existing_age').val());
-        formData.append('dob', $('#existing_dob').val());
-        formData.append('patient_type', $('#existing_patient_type').val());
-        formData.append('mobile_number', $('#existing_mobile').val());
-        formData.append('phone', $('#existing_phone').val());
-        formData.append('email', $('#existing_email').val());
-        formData.append('address', $('#existing_address').val());
-        formData.append('address_landmark', $('#existing_landmark').val());
-        formData.append('city', $('#existing_city').val());
-        formData.append('state', $('#existing_state').val());
-        formData.append('pincode', $('#existing_pincode').val());
-        formData.append('registered_other_hospital', $('input[name="registered_other_hospital"]:checked').val());
-        formData.append('fee_payment', $('input[name="fee_payment"]:checked').val());
+    // Check if updating patient info (for walk-in with full form)
+    const showFullForm = $('#show_full_patient_form').val();
+    formData.append('show_full_patient_form', showFullForm || '0');
+    
+    // Patient update data (if full form shown - walk-in mode)
+    if (showFullForm == '1') {
+        formData.append('patient_name', $('#existing_patient_name').val() || '');
+        formData.append('gender', $('#existing_gender').val() || '');
+        formData.append('age', $('#existing_age').val() || '');
+        formData.append('dob', $('#existing_dob').val() || '');
+        formData.append('patient_type', $('#existing_patient_type').val() || '');
+        formData.append('mobile_number', $('#existing_mobile').val() || '');
+        formData.append('phone', $('#existing_phone').val() || '');
+        formData.append('email', $('#existing_email').val() || '');
+        formData.append('address', $('#existing_address').val() || '');
+        formData.append('address_landmark', $('#existing_landmark').val() || '');
+        formData.append('city', $('#existing_city').val() || '');
+        formData.append('state', $('#existing_state').val() || '');
+        formData.append('pincode', $('#existing_pincode').val() || '');
+        formData.append('registered_other_hospital', $('input[name="registered_other_hospital"]:checked').val() || '0');
+        formData.append('other_hospital_patient_id', $('#existing_other_hospital_id').val() || '');
+        formData.append('fee_payment', $('input[name="fee_payment"]:checked').val() || '0');
         
         // Recommendation
-        formData.append('recommended_to_hospital', $('input[name="recommended_to_hospital"]:checked').val());
-        formData.append('recommended_by', $('#existing_recommended_by').val());
+        formData.append('recommended_to_hospital', $('input[name="recommended_to_hospital"]:checked').val() || '0');
+        formData.append('recommended_by', $('#existing_recommended_by').val() || '');
         
-        // Recommendation file(s) - multiple files
-        const recFiles = $('#existing_recommendation_file')[0].files;
-        if (recFiles.length > 0) {
+        // Recommendation file(s)
+        const recFiles = $('#existing_recommendation_file')[0]?.files;
+        if (recFiles && recFiles.length > 0) {
             for (let i = 0; i < recFiles.length; i++) {
                 formData.append('recommendation_file[]', recFiles[i]);
             }
         }
         
         // Membership
-        formData.append('has_membership', $('input[name="has_membership"]:checked').val());
-        formData.append('membership_type', $('#existing_membership_type').val());
-        formData.append('membership_number', $('#existing_membership_number').val());
-        formData.append('membership_expiry_date', $('#existing_membership_expiry').val());
-        formData.append('membership_notes', $('#existing_membership_notes').val());
+        formData.append('has_membership', $('input[name="has_membership"]:checked').val() || '0');
+        formData.append('membership_type', $('#existing_membership_type').val() || '');
+        formData.append('membership_number', $('#existing_membership_number').val() || '');
+        formData.append('membership_expiry_date', $('#existing_membership_expiry').val() || '');
+        formData.append('membership_notes', $('#existing_membership_notes').val() || '');
+        
+        // Membership file(s)
+        if ($('input[name="has_membership"]:checked').val() == '1') {
+            const memFiles = $('#existing_membership_file')[0]?.files;
+            if (memFiles && memFiles.length > 0) {
+                for (let i = 0; i < memFiles.length; i++) {
+                    formData.append('membership_file[]', memFiles[i]);
+                }
+            }
+        }
+        
+        // Other documents
+        const otherFiles = $('#existing_other_documents')[0]?.files;
+        if (otherFiles && otherFiles.length > 0) {
+            for (let i = 0; i < otherFiles.length; i++) {
+                formData.append('other_documents[]', otherFiles[i]);
+            }
+        }
     }
     
+    // Submit via AJAX
     $.ajax({
         url: admin_url + 'hospital_management/save_appointment',
         type: 'POST',
@@ -1362,6 +1474,11 @@ function saveExistingPatientAppointment() {
         dataType: 'json',
         success: function(response) {
             if (response.success) {
+                // Update CSRF token
+                if (response.csrf_token_name && response.csrf_token_hash) {
+                    csrfTokenName = response.csrf_token_name;
+                    csrfTokenHash = response.csrf_token_hash;
+                }
                 alert_float('success', response.message);
                 setTimeout(function() {
                     location.reload();
@@ -1371,8 +1488,15 @@ function saveExistingPatientAppointment() {
                 $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
             }
         },
-        error: function() {
-            alert_float('danger', 'Error creating appointment');
+        error: function(xhr, status, error) {
+            console.error('Appointment save error:', status, error);
+            let errorMsg = 'Error creating appointment';
+            if (xhr.status === 419) {
+                errorMsg = 'Session expired. Please refresh the page and try again.';
+            } else if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+            }
+            alert_float('danger', errorMsg);
             $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
         }
     });
@@ -1387,40 +1511,59 @@ function saveNewPatientAppointment() {
     // Create FormData to handle file uploads
     const formData = new FormData();
     
-    // Common data
+    // CRITICAL: Add CSRF token
+    formData.append(csrfTokenName, csrfTokenHash);
+    
+    // ========== COMMON FIELDS (Both Modes) ==========
     formData.append('mode', mode);
     formData.append('reason_for_appointment', $('#reason_for_appointment').val());
     
     if (mode === 'appointment') {
-        // Quick appointment - minimal fields
+        // ========== QUICK APPOINTMENT MODE - Minimal Fields ==========
         formData.append('name', $('#new_name').val());
         formData.append('mobile_number', $('#new_mobile').val());
         formData.append('patient_type', 'Regular');
         formData.append('gender', 'other');
-    } else {
-        // Walk-in - full form
+        formData.append('registered_other_hospital', '0');
+        formData.append('fee_payment', '0');
+        formData.append('recommended_to_hospital', '0');
+        formData.append('has_membership', '0');
+        
+    } else if (mode === 'walkin') {
+        // ========== WALK-IN MODE - ALL FIELDS ==========
+        
+        // Basic information
         formData.append('name', $('input[name="walkin_name"]').val());
         formData.append('gender', $('select[name="walkin_gender"]').val());
         formData.append('age', $('input[name="walkin_age"]').val());
         formData.append('dob', $('input[name="walkin_dob"]').val());
         formData.append('patient_type', $('select[name="walkin_patient_type"]').val());
+        
+        // Contact information
         formData.append('mobile_number', $('input[name="walkin_mobile"]').val());
         formData.append('phone', $('input[name="walkin_phone"]').val());
         formData.append('email', $('input[name="walkin_email"]').val());
+        
+        // Address information
         formData.append('address', $('textarea[name="walkin_address"]').val());
         formData.append('address_landmark', $('input[name="walkin_landmark"]').val());
         formData.append('city', $('input[name="walkin_city"]').val());
         formData.append('state', $('input[name="walkin_state"]').val());
         formData.append('pincode', $('input[name="walkin_pincode"]').val());
-        formData.append('registered_other_hospital', $('input[name="walkin_registered_other"]:checked').val());
-        formData.append('fee_payment', $('input[name="walkin_fee_payment"]:checked').val());
+        
+        // Other hospital registration
+        formData.append('registered_other_hospital', $('input[name="walkin_registered_other"]:checked').val() || '0');
+        formData.append('other_hospital_patient_id', $('input[name="walkin_other_hospital_id"]').val() || '');
+        
+        // Fee payment
+        formData.append('fee_payment', $('input[name="walkin_fee_payment"]:checked').val() || '0');
         
         // Recommendation
-        formData.append('recommended_to_hospital', $('input[name="walkin_recommended_to_hospital"]:checked').val());
-        formData.append('recommended_by', $('input[name="walkin_recommended_by"]').val());
+        formData.append('recommended_to_hospital', $('input[name="walkin_recommended_to_hospital"]:checked').val() || '0');
+        formData.append('recommended_by', $('input[name="walkin_recommended_by"]').val() || '');
         
         // Recommendation file(s) - multiple files
-        const recFiles = $('input[name="recommendation_file[]"]')[0].files;
+        const recFiles = $('input[name="recommendation_file[]"]')[0]?.files;
         if (recFiles && recFiles.length > 0) {
             for (let i = 0; i < recFiles.length; i++) {
                 formData.append('recommendation_file[]', recFiles[i]);
@@ -1428,20 +1571,47 @@ function saveNewPatientAppointment() {
         }
         
         // Membership
-        formData.append('has_membership', $('input[name="walkin_has_membership"]:checked').val());
-        formData.append('membership_type', $('input[name="walkin_membership_type"]').val());
-        formData.append('membership_number', $('input[name="walkin_membership_number"]').val());
-        formData.append('membership_expiry_date', $('input[name="walkin_membership_expiry_date"]').val());
-        formData.append('membership_notes', $('textarea[name="walkin_membership_notes"]').val());
+        formData.append('has_membership', $('input[name="walkin_has_membership"]:checked').val() || '0');
+        formData.append('membership_type', $('input[name="walkin_membership_type"]').val() || '');
+        formData.append('membership_number', $('input[name="walkin_membership_number"]').val() || '');
+        formData.append('membership_expiry_date', $('input[name="walkin_membership_expiry_date"]').val() || '');
+        formData.append('membership_notes', $('textarea[name="walkin_membership_notes"]').val() || '');
+        
+        // Membership file(s) - only if has membership
+        if ($('input[name="walkin_has_membership"]:checked').val() == '1') {
+            const memFiles = $('input[name="membership_file[]"]')[0]?.files;
+            if (memFiles && memFiles.length > 0) {
+                for (let i = 0; i < memFiles.length; i++) {
+                    formData.append('membership_file[]', memFiles[i]);
+                }
+            }
+        }
+        
+        // Other documents (optional)
+        const otherFiles = $('input[name="other_documents[]"]')[0]?.files;
+        if (otherFiles && otherFiles.length > 0) {
+            for (let i = 0; i < otherFiles.length; i++) {
+                formData.append('other_documents[]', otherFiles[i]);
+            }
+        }
     }
     
+    // ========== VALIDATION ==========
     if (!formData.get('name') || !formData.get('mobile_number')) {
         alert_float('warning', 'Please fill name and mobile number');
         $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
         return;
     }
     
-    // First create patient
+    // Validate mobile number format
+    const mobileNumber = formData.get('mobile_number');
+    if (!/^[6-9]\d{9}$/.test(mobileNumber)) {
+        alert_float('warning', 'Please enter a valid 10-digit mobile number');
+        $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
+        return;
+    }
+    
+    // ========== CREATE PATIENT FIRST ==========
     $.ajax({
         url: admin_url + 'hospital_management/save_quick_patient',
         type: 'POST',
@@ -1451,8 +1621,14 @@ function saveNewPatientAppointment() {
         dataType: 'json',
         success: function(response) {
             if (response.success) {
-                // Then create appointment
+                // ✅ UPDATE CSRF TOKEN FIRST
+                if (response.csrf_token_name && response.csrf_token_hash) {
+                    csrfTokenName = response.csrf_token_name;
+                    csrfTokenHash = response.csrf_token_hash;
+                }
+                // ========== THEN CREATE APPOINTMENT ==========
                 const appointmentData = {
+                    [csrfTokenName]: csrfTokenHash,
                     patient_id: response.id,
                     patient_mode: mode,
                     is_new_patient: 1,
@@ -1469,8 +1645,14 @@ function saveNewPatientAppointment() {
                 $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
             }
         },
-        error: function() {
-            alert_float('danger', 'Error creating patient');
+        error: function(xhr) {
+            let errorMsg = 'Error creating patient';
+            if (xhr.status === 419) {
+                errorMsg = 'Session expired. Please refresh the page and try again.';
+            } else if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+            }
+            alert_float('danger', errorMsg);
             $btn.prop('disabled', false).html('<i class="fa fa-check"></i> Create Appointment');
         }
     });
@@ -1600,5 +1782,6 @@ function updateTimeDisplay() {
         $('#timeDisplay').fadeIn();
     }
 }
+
 // ============ END TIME PICKER ============
 </script>

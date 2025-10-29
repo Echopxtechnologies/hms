@@ -242,19 +242,43 @@ class Hospital_management extends AdminController
         echo json_encode(['success' => true, 'roles' => $roles]);
     }
 
-    /**
-     * Appointment Management
-     */
-    public function appointments()
-    {
-        if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
-            access_denied('Appointments');
-        }
-        
-        $data['title'] = 'Appointment Management';
-        $this->load->view('appointments', $data);
+   /**
+ * Appointments Management
+ */
+/**
+ * Appointments Management - FIXED: Added missing method
+ */
+public function appointments()
+{
+    // Check permissions
+    if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
+        access_denied('Appointments');
     }
     
+    // Load models
+    $this->load->model('hospital_appointments_model');
+    $this->load->model('hospital_patients_model');
+    
+    // Get all appointments with patient and consultant details
+    $data['appointments'] = $this->hospital_appointments_model->get_all();
+    
+    // Get statistics
+    $data['statistics'] = $this->hospital_appointments_model->get_statistics();
+    
+    // Get consultants for dropdown
+    $data['consultants'] = $this->hospital_appointments_model->get_consultants();
+    
+    // Get patient types for dropdown
+    $data['patient_types'] = $this->hospital_patients_model->get_patient_types();
+    
+    // Get active patients for dropdown (limit to recent 100)
+    $data['patients'] = $this->hospital_patients_model->get_patients_for_dropdown();
+    
+    $data['title'] = 'Manage Appointments';
+    
+    // Load the appointments view
+    $this->load->view('appointments', $data);
+}
     /**
      * Patient Management
      */
@@ -405,107 +429,154 @@ class Hospital_management extends AdminController
     /**
      * Save quick patient (for appointments - minimal or full info)
      */
-    public function save_quick_patient()
-    {
-        if (!$this->input->is_ajax_request()) {
-            show_404();
-        }
-        
-        $this->load->model('hospital_patients_model');
-        
-        // Collect all patient data (for walk-in full form)
-        $patient_data = [
-            'is_new_patient'            => 1,
-            'mode'                      => $this->input->post('mode'),
-            'name'                      => $this->input->post('name'),
-            'gender'                    => $this->input->post('gender') ?: 'other',
-            'mobile_number'             => $this->input->post('mobile_number'),
-            'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
-            'patient_type'              => $this->input->post('patient_type') ?: 'Regular',
-            'status'                    => 'active'
-        ];
-        
-        // Add optional fields if provided
-        if ($this->input->post('age')) {
-            $patient_data['age'] = $this->input->post('age');
-        }
-        if ($this->input->post('dob')) {
-            $patient_data['dob'] = $this->input->post('dob');
-        }
-        if ($this->input->post('phone')) {
-            $patient_data['phone'] = $this->input->post('phone');
-        }
-        if ($this->input->post('email')) {
-            $patient_data['email'] = $this->input->post('email');
-        }
-        if ($this->input->post('address')) {
-            $patient_data['address'] = $this->input->post('address');
-        }
-        if ($this->input->post('address_landmark')) {
-            $patient_data['address_landmark'] = $this->input->post('address_landmark');
-        }
-        if ($this->input->post('city')) {
-            $patient_data['city'] = $this->input->post('city');
-        }
-        if ($this->input->post('state')) {
-            $patient_data['state'] = $this->input->post('state');
-        }
-        if ($this->input->post('pincode')) {
-            $patient_data['pincode'] = $this->input->post('pincode');
-        }
-        if ($this->input->post('registered_other_hospital') !== null) {
-            $patient_data['registered_other_hospital'] = $this->input->post('registered_other_hospital');
-        }
-        if ($this->input->post('fee_payment')) {
-            $patient_data['fee_payment'] = $this->input->post('fee_payment');
-        }
-        
-        // Recommendation fields
-        if ($this->input->post('recommended_to_hospital') !== null) {
-            $patient_data['recommended_to_hospital'] = $this->input->post('recommended_to_hospital');
-        }
-        if ($this->input->post('recommended_by')) {
-            $patient_data['recommended_by'] = $this->input->post('recommended_by');
-        }
-        
-        // Membership fields
-        if ($this->input->post('has_membership') !== null) {
-            $patient_data['has_membership'] = $this->input->post('has_membership');
-        }
-        if ($this->input->post('membership_type')) {
-            $patient_data['membership_type'] = $this->input->post('membership_type');
-        }
-        if ($this->input->post('membership_number')) {
-            $patient_data['membership_number'] = $this->input->post('membership_number');
-        }
-        if ($this->input->post('membership_expiry_date')) {
-            $patient_data['membership_expiry_date'] = $this->input->post('membership_expiry_date');
-        }
-        if ($this->input->post('membership_notes')) {
-            $patient_data['membership_notes'] = $this->input->post('membership_notes');
-        }
-        
-        // Handle file uploads
-        $files = [];
-        
-        if (!empty($_FILES['recommendation_file']['name'])) {
-            $files['recommendation'] = $_FILES['recommendation_file'];
-        }
-        
-        if ($this->input->post('has_membership') == '1' && !empty($_FILES['membership_file']['name'])) {
-            $files['membership'] = $_FILES['membership_file'];
-        }
-        
-        if (!empty($_FILES['other_documents']['name'][0])) {
-            $files['other'] = $_FILES['other_documents'];
-        }
-        
-        $result = $this->hospital_patients_model->save($patient_data, $files);
-        
-        header('Content-Type: application/json');
-        echo json_encode($result);
+    /**
+ * Save Quick Patient (AJAX) - For appointment form patient creation
+ * Handles ALL fields from tblhospital_patients
+ */
+public function save_quick_patient()
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
     }
     
+    if (!is_receptionist() && !has_permission('reception_management', '', 'create')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'No permission']);
+        return;
+    }
+    
+    $mode = $this->input->post('mode'); // 'appointment' or 'walkin'
+    
+    // ========== COLLECT ALL PATIENT DATA ==========
+    $patient_data = [
+        // Basic required fields
+        'name'                      => $this->input->post('name'),
+        'mobile_number'             => $this->input->post('mobile_number'),
+        
+        // Patient status fields
+        'is_new_patient'            => 1, // Always new patient in this function
+        'mode'                      => $mode, // 'appointment' or 'walkin'
+        'status'                    => 'active', // Default status
+        
+        // Personal information
+        'gender'                    => $this->input->post('gender'),
+        'dob'                       => $this->input->post('dob'),
+        'age'                       => $this->input->post('age'),
+        
+        // Contact information
+        'phone'                     => $this->input->post('phone'),
+        'email'                     => $this->input->post('email'),
+        
+        // Address information
+        'address'                   => $this->input->post('address'),
+        'address_landmark'          => $this->input->post('address_landmark'),
+        'city'                      => $this->input->post('city'),
+        'state'                     => $this->input->post('state'),
+        'pincode'                   => $this->input->post('pincode'),
+        
+        // Registration details
+        'patient_type'              => $this->input->post('patient_type'),
+        'fee_payment'               => $this->input->post('fee_payment'),
+        'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
+        
+        // Other hospital registration
+        'registered_other_hospital' => $this->input->post('registered_other_hospital'),
+        'other_hospital_patient_id' => $this->input->post('other_hospital_patient_id'),
+        
+        // Recommendation fields
+        'recommended_to_hospital'   => $this->input->post('recommended_to_hospital'),
+        'recommended_by'            => $this->input->post('recommended_by'),
+        
+        // Membership fields
+        'has_membership'            => $this->input->post('has_membership'),
+        'membership_type'           => $this->input->post('membership_type'),
+        'membership_number'         => $this->input->post('membership_number'),
+        'membership_expiry_date'    => $this->input->post('membership_expiry_date'),
+        'membership_notes'          => $this->input->post('membership_notes'),
+    ];
+    
+    // ========== HANDLE FILE UPLOADS ==========
+    $files = [];
+    
+    // Recommendation file(s) - multiple files supported
+    if (!empty($_FILES['recommendation_file']['name'])) {
+        // Check if it's an array (multiple files)
+        if (is_array($_FILES['recommendation_file']['name'])) {
+            $files['recommendation'] = $_FILES['recommendation_file'];
+        } else {
+            $files['recommendation'] = $_FILES['recommendation_file'];
+        }
+    }
+    
+    // Membership file(s) - only if has_membership = 1
+    if ($this->input->post('has_membership') == '1' && !empty($_FILES['membership_file']['name'])) {
+        if (is_array($_FILES['membership_file']['name'])) {
+            $files['membership'] = $_FILES['membership_file'];
+        } else {
+            $files['membership'] = $_FILES['membership_file'];
+        }
+    }
+    
+    // Other documents (optional)
+    if (!empty($_FILES['other_documents']['name'])) {
+        if (is_array($_FILES['other_documents']['name'])) {
+            $files['other'] = $_FILES['other_documents'];
+        } else {
+            $files['other'] = $_FILES['other_documents'];
+        }
+    }
+    
+    // ========== BASIC VALIDATION ==========
+    $validation_errors = [];
+    
+    if (empty($patient_data['name'])) {
+        $validation_errors[] = 'Patient name is required';
+    }
+    
+    if (empty($patient_data['mobile_number'])) {
+        $validation_errors[] = 'Mobile number is required';
+    }
+    
+    // Validate mobile number format (10 digits for India)
+    if (!empty($patient_data['mobile_number']) && !preg_match('/^[6-9]\d{9}$/', $patient_data['mobile_number'])) {
+        $validation_errors[] = 'Invalid mobile number format';
+    }
+    
+    // For walk-in mode, additional validation
+    if ($mode === 'walkin') {
+        if (empty($patient_data['gender'])) {
+            $validation_errors[] = 'Gender is required for walk-in patients';
+        }
+        
+        if (empty($patient_data['patient_type'])) {
+            $validation_errors[] = 'Patient type is required for walk-in patients';
+        }
+    }
+    
+    // If validation fails, return errors
+    if (!empty($validation_errors)) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'message' => implode('<br>', $validation_errors)
+        ]);
+        return;
+    }
+    
+    // ========== SAVE PATIENT ==========
+    $this->load->model('hospital_patients_model');
+    $result = $this->hospital_patients_model->save($patient_data, $files);
+    
+    // ========== RETURN RESPONSE ==========
+    header('Content-Type: application/json');
+
+// ✅ ADD CSRF TOKEN TO RESPONSE
+if ($result['success']) {
+    $result['csrf_token_name'] = $this->security->get_csrf_token_name();
+    $result['csrf_token_hash'] = $this->security->get_csrf_hash();
+}
+    echo json_encode($result);
+}
     /**
      * Save appointment (AJAX) - UPDATED to handle patient data and file uploads
      */
@@ -592,6 +663,12 @@ class Hospital_management extends AdminController
         $result = $this->hospital_appointments_model->save($appointment_data, $patient_data, $files);
         
         header('Content-Type: application/json');
+        // ✅ ADD CSRF TOKEN TO RESPONSE
+if ($result['success']) {
+    $result['csrf_token_name'] = $this->security->get_csrf_token_name();
+    $result['csrf_token_hash'] = $this->security->get_csrf_hash();
+}
+
         echo json_encode($result);
     }
     
