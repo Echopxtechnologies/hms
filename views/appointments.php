@@ -705,24 +705,24 @@
                     <!-- Consultant Dropdown -->
                     <div class="row">
                         <div class="col-md-12">
-                            <div class="form-group">
+                           <div class="form-group">
                                 <label for="consultant_id" class="control-label">
-                                    Consultant <span class="text-danger">*</span>
+                                    <span class="text-danger">*</span> Consultant
                                 </label>
-                                <select id="consultant_id" name="consultant_id" class="form-control selectpicker" data-live-search="true" data-width="100%" required>
-                                    <option value="">-- Select Consultant --</option>
-                                    <?php if (!empty($consultants)) { ?>
-                                        <?php foreach ($consultants as $consultant) { ?>
-                                            <option value="<?php echo $consultant['id']; ?>">
-                                                <?php echo $consultant['first_name'] . ' ' . $consultant['last_name']; ?>
-                                                <?php if (!empty($consultant['email'])) { ?>
-                                                    (<?php echo $consultant['email']; ?>)
-                                                <?php } ?>
-                                            </option>
-                                        <?php } ?>
-                                    <?php } else { ?>
-                                        <option value="" disabled>No consultants found</option>
-                                    <?php } ?>
+                                <select name="consultant_id" id="consultant_id" 
+                                        class="form-control selectpicker" 
+                                        data-live-search="true" 
+                                        data-width="100%" 
+                                        required>
+                                    <option value="">Select Consultant</option>
+                                    <?php foreach ($consultants as $consultant): ?>
+                                        <option value="<?php echo $consultant['staff_id']; ?>">
+                                            <?php echo htmlspecialchars($consultant['full_name']); ?>
+                                            <?php if (!empty($consultant['email'])): ?>
+                                                - <?php echo htmlspecialchars($consultant['email']); ?>
+                                            <?php endif; ?>
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                         </div>

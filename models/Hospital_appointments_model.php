@@ -39,34 +39,41 @@ class Hospital_appointments_model extends App_Model
     /**
      * Get consultants - ONLY users with Consultant role
      */
-    public function get_consultants()
-    {
-        $this->db->select('
-            hu.id,
-            hu.staff_id,
-            hu.first_name,
-            hu.last_name,
-            hu.email,
-            hu.phone_number,
-            r.name as role_name
-        ');
-        $this->db->from(db_prefix() . 'hospital_users hu');
-        $this->db->join(db_prefix() . 'roles r', 'r.roleid = hu.role_id', 'left');
-        $this->db->where('hu.active', 1);
-        
-        // Filter by Consultant role name
-        $this->db->where('r.name', 'Consultant');
-        
-        $this->db->order_by('hu.first_name', 'ASC');
-        
-        $consultants = $this->db->get()->result_array();
-        
-        foreach ($consultants as &$c) {
-            $c['full_name'] = $c['first_name'] . ' ' . $c['last_name'];
-        }
-        
-        return $consultants;
+/**
+ * Get consultants - Return staff_id as the value for FK constraint
+ */
+public function get_consultants()
+{
+    $this->db->select('
+        hu.staff_id as id,
+        hu.staff_id as consultant_id,
+        hu.staff_id,
+        hu.first_name,
+        hu.last_name,
+        hu.email,
+        hu.phone_number,
+        r.name as role_name
+    ');
+    $this->db->from(db_prefix() . 'hospital_users hu');
+    $this->db->join(db_prefix() . 'roles r', 'r.roleid = hu.role_id', 'left');
+    $this->db->where('hu.active', 1);
+    
+    // Filter by Consultant role name
+    $this->db->where('r.name', 'Consultant');
+    
+    // CRITICAL: Ensure staff_id exists in tblstaff
+    $this->db->join(db_prefix() . 'staff s', 's.staffid = hu.staff_id', 'inner');
+    
+    $this->db->order_by('hu.first_name', 'ASC');
+    
+    $consultants = $this->db->get()->result_array();
+    
+    foreach ($consultants as &$c) {
+        $c['full_name'] = $c['first_name'] . ' ' . $c['last_name'];
     }
+    
+    return $consultants;
+}
     
     /**
      * Get appointment by ID

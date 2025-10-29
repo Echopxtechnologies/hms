@@ -10,6 +10,7 @@ class Hospital_management extends AdminController
         $this->load->model('hospital_users_model');
         $this->load->model('hospital_patients_model');
         $this->load->model('hospital_appointments_model'); 
+        
     }
     
     /**
@@ -349,96 +350,116 @@ class Hospital_management extends AdminController
      * 3. New patient appointment
      * 4. New patient walk-in
      */
-    public function save_appointment()
-    {
-        if (!$this->input->is_ajax_request()) {
-            show_404();
-        }
-        
-        if (!is_receptionist() && !has_permission('reception_management', '', 'create')) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'No permission']);
-            return;
-        }
-        
-        // ========== COLLECT ALL DATA ==========
-        
-        // Appointment data
-        $appointment_data = [
-            'id'                        => $this->input->post('appointment_id'),
-            'patient_id'                => $this->input->post('patient_id'),
-            'patient_mode'              => $this->input->post('patient_mode'),
-            'is_new_patient'            => $this->input->post('is_new_patient'),
-            'appointment_date'          => $this->input->post('appointment_date'),
-            'appointment_time'          => $this->input->post('appointment_time'),
-            'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
-            'consultant_id'             => $this->input->post('consultant_id'),
-            'notes'                     => $this->input->post('notes'),
-        ];
-        
-        // Patient data (if provided - for new patients or existing patient updates)
-        $patient_data = [];
-        
-        // Collect patient data for: 1) New patients, OR 2) Walk-in mode (existing patient update)
-if ($this->input->post('is_new_patient') == '1' || $this->input->post('patient_mode') == 'walk_in') {
-            $patient_data = [
-                'is_new_patient'            => $this->input->post('is_new_patient'),
-                'mode'                      => $this->input->post('patient_mode'),
-                'registered_other_hospital' => $this->input->post('registered_other_hospital'),
-                'other_hospital_patient_id' => $this->input->post('other_hospital_patient_id'),
-                'name'                      => $this->input->post('name'),
-                'gender'                    => $this->input->post('gender'),
-                'dob'                       => $this->input->post('dob'),
-                'age'                       => $this->input->post('age'),
-                'address'                   => $this->input->post('address'),
-                'address_landmark'          => $this->input->post('address_landmark'),
-                'city'                      => $this->input->post('city'),
-                'state'                     => $this->input->post('state'),
-                'pincode'                   => $this->input->post('pincode'),
-                'phone'                     => $this->input->post('phone'),
-                'mobile_number'             => $this->input->post('mobile_number'),
-                'email'                     => $this->input->post('email'),
-                'fee_payment'               => $this->input->post('fee_payment'),
-                'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
-                'patient_type'              => $this->input->post('patient_type'),
-                'recommended_to_hospital'   => $this->input->post('recommended_to_hospital'),
-                'recommended_by'            => $this->input->post('recommended_by'),
-                'has_membership'            => $this->input->post('has_membership'),
-                'membership_type'           => $this->input->post('membership_type'),
-                'membership_number'         => $this->input->post('membership_number'),
-                'membership_expiry_date'    => $this->input->post('membership_expiry_date'),
-                'membership_notes'          => $this->input->post('membership_notes'),
-            ];
-        }
-        
-        // Handle file uploads
-        $files = [];
-        
-        if (!empty($_FILES['recommendation_file']['name'][0])) {
-            $files['recommendation'] = $_FILES['recommendation_file'];
-        }
-        
-        if ($this->input->post('has_membership') == '1' && !empty($_FILES['membership_file']['name'][0])) {
-            $files['membership'] = $_FILES['membership_file'];
-        }
-        
-        if (!empty($_FILES['other_documents']['name'][0])) {
-            $files['other'] = $_FILES['other_documents'];
-        }
-        
-        // ========== SAVE APPOINTMENT (MODEL HANDLES EVERYTHING) ==========
-        $result = $this->hospital_appointments_model->save($appointment_data, $patient_data, $files);
-        
-        // Add CSRF token to response
-        if ($result['success']) {
-            $result['csrf_token_name'] = $this->security->get_csrf_token_name();
-            $result['csrf_token_hash'] = $this->security->get_csrf_hash();
-        }
-        
-        header('Content-Type: application/json');
-        echo json_encode($result);
+   public function save_appointment()
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
     }
     
+    if (!is_receptionist() && !has_permission('reception_management', '', 'create')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'No permission']);
+        return;
+    }
+    
+    // ========== COLLECT ALL DATA ==========
+    $appointment_data = [
+        'id'                        => $this->input->post('appointment_id'),
+        'patient_id'                => $this->input->post('patient_id'),
+        'patient_mode'              => $this->input->post('patient_mode'),
+        'is_new_patient'            => $this->input->post('is_new_patient'),
+        'appointment_date'          => $this->input->post('appointment_date'),
+        'appointment_time'          => $this->input->post('appointment_time'),
+        'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
+        'consultant_id'             => $this->input->post('consultant_id'),
+        'notes'                     => $this->input->post('notes'),
+    ];
+    
+    // ========== CRITICAL: VALIDATE CONSULTANT BEFORE SAVING ==========
+    $consultant_id = $appointment_data['consultant_id'];
+    
+    if (empty($consultant_id)) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Please select a consultant']);
+        return;
+    }
+    
+    // Check if consultant exists in tblstaff
+    $this->db->where('staffid', $consultant_id);
+    $this->db->where('active', 1);
+    $staff_exists = $this->db->count_all_results(db_prefix() . 'staff');
+    
+    if ($staff_exists == 0) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Invalid consultant selected. Consultant does not exist in staff records. Please refresh and try again.'
+        ]);
+        log_message('error', 'Invalid consultant_id: ' . $consultant_id . ' attempted by user: ' . get_staff_user_id());
+        return;
+    }
+    
+    // Patient data collection...
+    $patient_data = [];
+    
+    if ($this->input->post('is_new_patient') == '1' || $this->input->post('patient_mode') == 'walk_in') {
+        $patient_data = [
+            'is_new_patient'            => $this->input->post('is_new_patient'),
+            'mode'                      => $this->input->post('patient_mode'),
+            'registered_other_hospital' => $this->input->post('registered_other_hospital'),
+            'other_hospital_patient_id' => $this->input->post('other_hospital_patient_id'),
+            'name'                      => $this->input->post('name'),
+            'gender'                    => $this->input->post('gender'),
+            'dob'                       => $this->input->post('dob'),
+            'age'                       => $this->input->post('age'),
+            'address'                   => $this->input->post('address'),
+            'address_landmark'          => $this->input->post('address_landmark'),
+            'city'                      => $this->input->post('city'),
+            'state'                     => $this->input->post('state'),
+            'pincode'                   => $this->input->post('pincode'),
+            'phone'                     => $this->input->post('phone'),
+            'mobile_number'             => $this->input->post('mobile_number'),
+            'email'                     => $this->input->post('email'),
+            'fee_payment'               => $this->input->post('fee_payment'),
+            'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
+            'patient_type'              => $this->input->post('patient_type'),
+            'recommended_to_hospital'   => $this->input->post('recommended_to_hospital'),
+            'recommended_by'            => $this->input->post('recommended_by'),
+            'has_membership'            => $this->input->post('has_membership'),
+            'membership_type'           => $this->input->post('membership_type'),
+            'membership_number'         => $this->input->post('membership_number'),
+            'membership_expiry_date'    => $this->input->post('membership_expiry_date'),
+            'membership_notes'          => $this->input->post('membership_notes'),
+        ];
+    }
+    
+    // Handle file uploads
+    $files = [];
+    
+    if (!empty($_FILES['recommendation_file']['name'][0])) {
+        $files['recommendation'] = $_FILES['recommendation_file'];
+    }
+    
+    if ($this->input->post('has_membership') == '1' && !empty($_FILES['membership_file']['name'][0])) {
+        $files['membership'] = $_FILES['membership_file'];
+    }
+    
+    if (!empty($_FILES['other_documents']['name'][0])) {
+        $files['other'] = $_FILES['other_documents'];
+    }
+    
+    // ========== SAVE APPOINTMENT ==========
+    $result = $this->hospital_appointments_model->save($appointment_data, $patient_data, $files);
+    
+    // Add CSRF token to response
+    if ($result['success']) {
+        $result['csrf_token_name'] = $this->security->get_csrf_token_name();
+        $result['csrf_token_hash'] = $this->security->get_csrf_hash();
+    }
+    
+    header('Content-Type: application/json');
+    echo json_encode($result);
+}
      /**
      * Get patients for dropdown (AJAX)
      */
@@ -712,4 +733,232 @@ public function view_patient($id)
         
         echo json_encode($result);
     }
+// consultant
+// ============================================
+  
+ public function consultant_appointments()
+{
+    // Admin can access via permissions, Consultant/JC via role
+    if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+        access_denied('Consultant Portal');
+    }
+    
+    $this->load->model('consultant_portal_model');
+    
+    $staff_id = get_staff_user_id();
+    $is_jc = is_junior_consultant();
+    
+    // If admin (not consultant/jc), treat as JC (see all)
+    if (!is_consultant_or_jc() && has_permission('consultant_portal', '', 'view')) {
+        $is_jc = true;
+    }
+    
+    // Fetch appointments and statistics
+    $data['appointments'] = $this->consultant_portal_model->get_appointments($staff_id, $is_jc);
+    $data['statistics'] = $this->consultant_portal_model->get_statistics($staff_id, $is_jc);
+    $data['title'] = 'My Appointments';
+    $data['is_jc'] = $is_jc;
+    
+    $this->load->view('consultant_appointments', $data);
+}
+    
+    /**
+     * Get appointments (AJAX)
+     */
+    public function get_consultant_appointments()
+    {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+        
+        // Admin can access via permissions, Consultant/JC via role
+        if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+            echo json_encode(['success' => false, 'message' => 'Access denied']);
+            return;
+        }
+        
+        $this->load->model('consultant_portal_model');
+        
+        $staff_id = get_staff_user_id();
+        $is_jc = is_junior_consultant();
+        
+        // If admin (not consultant/jc), treat as JC (see all)
+        if (!is_consultant_or_jc() && has_permission('consultant_portal', '', 'view')) {
+            $is_jc = true; // Admin sees all
+        }
+        
+        $appointments = $this->consultant_portal_model->get_appointments($staff_id, $is_jc);
+        
+        echo json_encode(['success' => true, 'data' => $appointments]);
+    }
+    
+   /**
+ * Get single appointment (AJAX)
+ */
+public function get_appointment_details($id)
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    // Admin can access via permissions, Consultant/JC via role
+    if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+    
+    $this->load->model('consultant_portal_model');
+    
+    $appointment = $this->consultant_portal_model->get($id);
+    
+    if (!$appointment) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Appointment not found']);
+        return;
+    }
+    
+    // Consultant can only see their own (JC and Admin see all)
+    if (is_consultant() && !is_junior_consultant() && !has_permission('consultant_portal', '', 'view')) {
+        if (!$this->consultant_portal_model->can_access($id, get_staff_user_id())) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Access denied to this appointment']);
+            return;
+        }
+    }
+    
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'data' => $appointment]);
+}
+    /**
+ * Confirm appointment (Consultant Portal)
+ */
+public function confirm_consultant_appointment($id)
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    // Check access - Admin OR Consultant/JC
+    if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+    
+    $this->load->model('consultant_portal_model');
+    
+    // If consultant (not JC), verify they own this appointment
+    if (is_consultant() && !is_junior_consultant() && !has_permission('consultant_portal', '', 'view')) {
+        if (!$this->consultant_portal_model->can_access($id, get_staff_user_id())) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'You do not have access to this appointment']);
+            return;
+        }
+    }
+    
+    // Use the appointments model to confirm
+    $result = $this->hospital_appointments_model->confirm($id);
+    
+    header('Content-Type: application/json');
+    echo json_encode($result);
+}
+
+/**
+ * Reject appointment (Consultant Portal)
+ */
+public function reject_consultant_appointment()
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    // Check access - Admin OR Consultant/JC
+    if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+    
+    $id = $this->input->post('id');
+    $reason = $this->input->post('reason');
+    
+    if (empty($id)) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Appointment ID is required']);
+        return;
+    }
+    
+    $this->load->model('consultant_portal_model');
+    
+    // If consultant (not JC), verify they own this appointment
+    if (is_consultant() && !is_junior_consultant() && !has_permission('consultant_portal', '', 'view')) {
+        if (!$this->consultant_portal_model->can_access($id, get_staff_user_id())) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'You do not have access to this appointment']);
+            return;
+        }
+    }
+    
+    // Use cancel method with reason
+    $result = $this->hospital_appointments_model->cancel($id, $reason);
+    
+    header('Content-Type: application/json');
+    echo json_encode($result);
+}
+
+/**
+ * Delete appointment (Consultant Portal)
+ */
+public function delete_consultant_appointment($id)
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    // Check access - Admin OR JC only (regular consultants cannot delete)
+    if (!is_junior_consultant() && !has_permission('consultant_portal', '', 'delete')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Only Junior Consultants and Admins can delete appointments']);
+        return;
+    }
+    
+    // Perform deletion
+    $result = $this->hospital_appointments_model->delete($id);
+    
+    header('Content-Type: application/json');
+    echo json_encode($result);
+}
+
+/**
+ * Get consultant statistics (AJAX)
+ */
+public function get_consultant_statistics()
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
+    }
+    
+    // Check access
+    if (!is_consultant_or_jc() && !has_permission('consultant_portal', '', 'view')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Access denied']);
+        return;
+    }
+    
+    $this->load->model('consultant_portal_model');
+    
+    $staff_id = get_staff_user_id();
+    $is_jc = is_junior_consultant();
+    
+    // If admin (not consultant/jc), treat as JC (see all)
+    if (!is_consultant_or_jc() && has_permission('consultant_portal', '', 'view')) {
+        $is_jc = true;
+    }
+    
+    $stats = $this->consultant_portal_model->get_statistics($staff_id, $is_jc);
+    
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'data' => $stats]);
+}
 }

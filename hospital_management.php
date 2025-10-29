@@ -60,6 +60,18 @@ function hospital_management_activation_hook()
         $CI->db->insert(db_prefix() . 'roles', $consultant_role_data);
         log_activity('Hospital Management Module - Consultant Role Created');
     }
+    // Create "Junior Consultant" role if doesn't exist
+    $jc_role_exists = $CI->db->get_where(db_prefix() . 'roles', ['name' => 'Junior Consultant'])->num_rows();
+
+    if ($jc_role_exists == 0) {
+        $jc_role_data = [
+            'name' => 'Junior Consultant',
+            'permissions' => serialize([])
+        ];
+        
+        $CI->db->insert(db_prefix() . 'roles', $jc_role_data);
+        log_activity('Hospital Management Module - Junior Consultant Role Created');
+    }
 }   
 
 /**
@@ -160,6 +172,64 @@ function is_receptionist()
     return strtolower($role->name) === 'receptionist';
 }
 /**
+ * Helper function - Check if user has "Consultant" role
+ */
+function is_consultant()
+{
+    $CI = &get_instance();
+    $staff_id = get_staff_user_id();
+    
+    if (!$staff_id) {
+        return false;
+    }
+    
+    $staff = $CI->db->get_where(db_prefix() . 'staff', ['staffid' => $staff_id])->row();
+    if (!$staff) {
+        return false;
+    }
+    
+    $role = $CI->db->get_where(db_prefix() . 'roles', ['roleid' => $staff->role])->row();
+    if (!$role) {
+        return false;
+    }
+    
+    return strtolower($role->name) === 'consultant';
+}
+
+/**
+ * Helper function - Check if user has "Junior Consultant" role
+ */
+function is_junior_consultant()
+{
+    $CI = &get_instance();
+    $staff_id = get_staff_user_id();
+    
+    if (!$staff_id) {
+        return false;
+    }
+    
+    $staff = $CI->db->get_where(db_prefix() . 'staff', ['staffid' => $staff_id])->row();
+    if (!$staff) {
+        return false;
+    }
+    
+    $role = $CI->db->get_where(db_prefix() . 'roles', ['roleid' => $staff->role])->row();
+    if (!$role) {
+        return false;
+    }
+    
+    $role_name = strtolower($role->name);
+    return $role_name === 'junior consultant' || $role_name === 'jc';
+}
+
+/**
+ * Helper function - Check if user is Consultant OR Junior Consultant
+ */
+function is_consultant_or_jc()
+{
+    return is_consultant() || is_junior_consultant();
+}
+/**
  * Module Initialization
  * FIXED: Show menu for Administrator role OR users with permissions
  */
@@ -178,7 +248,7 @@ function hospital_management_init()
     
     register_staff_capabilities('hospital_users', $capabilities, 'Hospital Users');
     register_staff_capabilities('reception_management', $capabilities, 'Reception Management');
-    
+    register_staff_capabilities('consultant_portal', $capabilities, 'Consultant Portal');
     // ============================================
     // ADMINISTRATOR MENU (Hospital Management)
     // ============================================
@@ -271,6 +341,31 @@ function hospital_management_init()
             'position' => 5,
         ]);
     }
+
+
+// ============================================
+    // CONSULTANT PORTAL MENU (Consultant & JC)
+    // ============================================
+    if (is_consultant_or_jc() || has_permission('consultant_portal', '', 'view')) {
+        
+        // Main menu item - Consultant Portal
+        $CI->app_menu->add_sidebar_menu_item('consultant-portal', [
+            'slug'     => 'consultant-portal',
+            'name'     => 'Consultant Portal',
+            'icon'     => 'fa fa-user-md',
+            'href'     => admin_url('hospital_management/consultant_dashboard'),
+            'position' => 31,
+        ]);
+        
+        // Submenu - My Appointments
+        $CI->app_menu->add_sidebar_children_item('consultant-portal', [
+            'slug'     => 'my-appointments',
+            'name'     => 'My Appointments',
+            'icon'     => 'fa fa-calendar',
+            'href'     => admin_url('hospital_management/consultant_appointments'),
+            'position' => 1,
+        ]);
+    }
 }
 /**
  * Hide ALL menus except role-specific menus
@@ -291,7 +386,7 @@ function hospital_hide_other_menus()
     // Determine which menu to show based on role
     $show_hospital_management = is_hospital_administrator() || has_permission('hospital_users', '', 'view');
     $show_reception_desk = is_receptionist() || has_permission('reception_management', '', 'view');
-    
+    $show_consultant_portal = is_consultant_or_jc() || has_permission('consultant_portal', '', 'view');
     // CSS FIRST - Hides menus INSTANTLY (no flash on refresh)
     echo '<style>
     /* INSTANT HIDE - Before JavaScript runs */
@@ -322,6 +417,16 @@ function hospital_hide_other_menus()
         ';
     }
     
+    // Show Consultant Portal menu for Consultant/JC
+    if ($show_consultant_portal) {
+        echo '
+        #side-menu > li[class*="consultant"],
+        #side-menu > li[class*="consultant-portal"] {
+            display: block !important;
+            visibility: visible !important;
+        }
+        ';
+    }
     echo '</style>';
     
     // JavaScript cleanup - Removes from DOM after page loads
@@ -331,7 +436,7 @@ function hospital_hide_other_menus()
         
         var showHospitalManagement = ' . ($show_hospital_management ? 'true' : 'false') . ';
         var showReceptionDesk = ' . ($show_reception_desk ? 'true' : 'false') . ';
-        
+        var showConsultantPortal = ' . ($show_consultant_portal ? 'true' : 'false') . ';
         function removeOtherMenus() {
             var menuItems = document.querySelectorAll("#side-menu > li");
             
@@ -377,6 +482,20 @@ function hospital_hide_other_menus()
                         linkText.indexOf("reception") !== -1;
                     
                     if (isReceptionMenu) {
+                        shouldKeep = true;
+                    }
+                }
+                
+                // KEEP Consultant Portal menu for Consultant/JC
+                if (showConsultantPortal) {
+                    var isConsultantMenu = 
+                        classes.indexOf("consultant-portal") !== -1 || 
+                        classes.indexOf("consultant_portal") !== -1 ||
+                        classes.indexOf("menu-item-consultant-portal") !== -1 ||
+                        (href && href.indexOf("consultant") !== -1) ||
+                        linkText.indexOf("consultant portal") !== -1;
+                    
+                    if (isConsultantMenu) {
                         shouldKeep = true;
                     }
                 }
