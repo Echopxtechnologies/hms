@@ -20,7 +20,6 @@ class Hospital_appointments_model extends App_Model
         $prefix = 'APT';
         $year = date('Y');
         
-        // Get last appointment number for this year
         $this->db->select('appointment_number');
         $this->db->like('appointment_number', $prefix . $year, 'after');
         $this->db->order_by('id', 'DESC');
@@ -38,35 +37,37 @@ class Hospital_appointments_model extends App_Model
     }
     
     /**
-     * Get all consultants (users with Consultant role)
+     * Get consultants - ONLY users with Consultant role
      */
-/**
- * FIXED: Get consultants from hospital_users OR staff table
- */
-public function get_consultants()
-{
-    // PRIMARY: Get from hospital_users table
-    $this->db->select('
-        hu.id,
-        hu.staff_id,
-        hu.first_name,
-        hu.last_name,
-        hu.email,
-        hu.phone_number
-    ');
-    $this->db->from(db_prefix() . 'hospital_users hu');
-    $this->db->where('hu.active', 1);
-    $this->db->order_by('hu.first_name', 'ASC');
-    
-    $consultants = $this->db->get()->result_array();
-    
-    // Add full_name for convenience
-    foreach ($consultants as &$c) {
-        $c['full_name'] = $c['first_name'] . ' ' . $c['last_name'];
+    public function get_consultants()
+    {
+        $this->db->select('
+            hu.id,
+            hu.staff_id,
+            hu.first_name,
+            hu.last_name,
+            hu.email,
+            hu.phone_number,
+            r.name as role_name
+        ');
+        $this->db->from(db_prefix() . 'hospital_users hu');
+        $this->db->join(db_prefix() . 'roles r', 'r.roleid = hu.role_id', 'left');
+        $this->db->where('hu.active', 1);
+        
+        // Filter by Consultant role name
+        $this->db->where('r.name', 'Consultant');
+        
+        $this->db->order_by('hu.first_name', 'ASC');
+        
+        $consultants = $this->db->get()->result_array();
+        
+        foreach ($consultants as &$c) {
+            $c['full_name'] = $c['first_name'] . ' ' . $c['last_name'];
+        }
+        
+        return $consultants;
     }
     
-    return $consultants;
-}
     /**
      * Get appointment by ID
      */
@@ -85,130 +86,156 @@ public function get_consultants()
     }
     
     /**
- * Get all appointments with LEFT JOIN to handle missing consultants
- */
-public function get_all()
-{
-    $this->db->select(
-        $this->table . '.*, ' . 
-        db_prefix() . 'hospital_patients.name as patient_name, ' .
-        db_prefix() . 'hospital_patients.mobile_number as patient_mobile, ' .
-        db_prefix() . 'hospital_patients.patient_number as patient_number, ' .
-        'COALESCE(' . db_prefix() . 'staff.firstname, "Not Assigned") as consultant_firstname, ' .
-        'COALESCE(' . db_prefix() . 'staff.lastname, "") as consultant_lastname'
-    );
-    
-    // LEFT JOIN patients (required)
-    $this->db->join(
-        db_prefix() . 'hospital_patients', 
-        db_prefix() . 'hospital_patients.id = ' . $this->table . '.patient_id', 
-        'left'
-    );
-    
-    // LEFT JOIN staff (consultant) - handle NULL consultant_id
-    $this->db->join(
-        db_prefix() . 'staff', 
-        db_prefix() . 'staff.staffid = ' . $this->table . '.consultant_id', 
-        'left'
-    );
-    
-    $this->db->order_by($this->table . '.appointment_date', 'DESC');
-    $this->db->order_by($this->table . '.appointment_time', 'DESC');
-    
-    return $this->db->get($this->table)->result();
-}
-    
-/**
- * Save appointment with patient data (for existing/walk-in patients)
- */
-public function save($data, $patient_data = [], $files = [])
-{
-    $id = isset($data['id']) && !empty($data['id']) ? $data['id'] : null;
-    
-    // Validate appointment data
-    $validation_errors = $this->validate_appointment($data);
-    if (!empty($validation_errors)) {
-        return ['success' => false, 'message' => implode('<br>', $validation_errors)];
+     * Get all appointments with LEFT JOIN to handle missing consultants
+     */
+    public function get_all()
+    {
+        $this->db->select(
+            $this->table . '.*, ' . 
+            db_prefix() . 'hospital_patients.name as patient_name, ' .
+            db_prefix() . 'hospital_patients.mobile_number as patient_mobile, ' .
+            db_prefix() . 'hospital_patients.patient_number as patient_number, ' .
+            'COALESCE(' . db_prefix() . 'staff.firstname, "Not Assigned") as consultant_firstname, ' .
+            'COALESCE(' . db_prefix() . 'staff.lastname, "") as consultant_lastname'
+        );
+        
+        $this->db->join(
+            db_prefix() . 'hospital_patients', 
+            db_prefix() . 'hospital_patients.id = ' . $this->table . '.patient_id', 
+            'left'
+        );
+        
+        $this->db->join(
+            db_prefix() . 'staff', 
+            db_prefix() . 'staff.staffid = ' . $this->table . '.consultant_id', 
+            'left'
+        );
+        
+        $this->db->order_by($this->table . '.appointment_date', 'DESC');
+        $this->db->order_by($this->table . '.appointment_time', 'DESC');
+        
+        return $this->db->get($this->table)->result();
     }
     
-    // Handle patient data update for existing/walk-in patients
-    if (!empty($patient_data) && !empty($data['patient_id'])) {
-        $this->load->model('hospital_management/hospital_patients_model');
-        $patient_update = $this->hospital_patients_model->update_patient_info($data['patient_id'], $patient_data, $files);
+    /**
+     * Save appointment with patient data (handles all scenarios)
+     * Scenarios:
+     * 1. Existing patient appointment
+     * 2. Existing patient walk-in
+     * 3. New patient appointment
+     * 4. New patient walk-in
+     */
+    public function save($data, $patient_data = [], $files = [])
+    {
+        $id = isset($data['id']) && !empty($data['id']) ? $data['id'] : null;
         
-        if (!$patient_update['success']) {
-            return ['success' => false, 'message' => 'Failed to update patient information: ' . $patient_update['message']];
+        // ========== STEP 1: VALIDATE ONLY REQUIRED FIELDS ==========
+        $errors = [];
+        
+        // For new patient or if patient_data provided
+        if (!empty($patient_data)) {
+            if (empty($patient_data['name'])) {
+                $errors[] = 'Patient name is required';
+            }
+            if (empty($patient_data['mobile_number'])) {
+                $errors[] = 'Mobile number is required';
+            }
+            if (empty($patient_data['gender'])) {
+                $errors[] = 'Gender is required';
+            }
+            if (empty($patient_data['patient_type'])) {
+                $errors[] = 'Patient type is required';
+            }
+        } else {
+            // Existing patient - just check patient_id
+            if (empty($data['patient_id'])) {
+                $errors[] = 'Patient is required';
+            }
+        }
+        
+        // Appointment required fields
+        if (empty($data['appointment_date'])) {
+            $errors[] = 'Appointment date is required';
+        }
+        if (empty($data['appointment_time'])) {
+            $errors[] = 'Appointment time is required';
+        }
+        if (empty($data['reason_for_appointment'])) {
+            $errors[] = 'Reason for appointment is required';
+        }
+        if (empty($data['consultant_id'])) {
+            $errors[] = 'Consultant is required';
+        }
+        
+        if (!empty($errors)) {
+            return ['success' => false, 'message' => implode('<br>', $errors)];
+        }
+        
+        // ========== STEP 2: CREATE OR UPDATE PATIENT ==========
+        $patient_id = $data['patient_id'];
+        
+        if (!empty($patient_data)) {
+            // New patient or updating existing patient
+            if (empty($patient_id)) {
+                // CREATE NEW PATIENT
+                $this->load->model('hospital_patients_model');
+                $patient_result = $this->hospital_patients_model->save($patient_data, $files);
+                
+                if (!$patient_result['success']) {
+                    return $patient_result;
+                }
+                
+                $patient_id = $patient_result['id'];
+            } else {
+                // UPDATE EXISTING PATIENT
+                $this->load->model('hospital_patients_model');
+                $patient_result = $this->hospital_patients_model->update_patient_info($patient_id, $patient_data, $files);
+                
+                if (!$patient_result['success']) {
+                    return ['success' => false, 'message' => 'Failed to update patient: ' . $patient_result['message']];
+                }
+            }
+        }
+        
+        // ========== STEP 3: CREATE OR UPDATE APPOINTMENT ==========
+        $save_data = [
+            'patient_id'             => $patient_id,
+            'patient_mode'           => $data['patient_mode'],
+            'is_new_patient'         => isset($data['is_new_patient']) ? (int)$data['is_new_patient'] : 1,
+            'appointment_date'       => $data['appointment_date'],
+            'appointment_time'       => $data['appointment_time'],
+            'reason_for_appointment' => $data['reason_for_appointment'],
+            'consultant_id'          => $data['consultant_id'],
+            'status'                 => isset($data['status']) ? $data['status'] : 'pending',
+            'notes'                  => !empty($data['notes']) ? trim($data['notes']) : null,
+        ];
+        
+        if ($id) {
+            // UPDATE APPOINTMENT
+            $save_data['updated_at'] = date('Y-m-d H:i:s');
+            $this->db->where('id', $id);
+            $this->db->update($this->table, $save_data);
+            
+            log_activity('Hospital Appointment Updated [ID: ' . $id . ']');
+            return ['success' => true, 'message' => 'Appointment updated successfully', 'id' => $id];
+        } else {
+            // CREATE NEW APPOINTMENT
+            $save_data['appointment_number'] = $this->generate_appointment_number();
+            $save_data['created_by'] = get_staff_user_id();
+            $save_data['created_at'] = date('Y-m-d H:i:s');
+            
+            $this->db->insert($this->table, $save_data);
+            $insert_id = $this->db->insert_id();
+            
+            log_activity('Hospital Appointment Created [Number: ' . $save_data['appointment_number'] . ']');
+            return [
+                'success' => true, 
+                'message' => 'Appointment created successfully', 
+                'id' => $insert_id,
+                'appointment_number' => $save_data['appointment_number']
+            ];
         }
     }
-    
-    // Prepare appointment save data
-    $save_data = [
-        'patient_id'             => $data['patient_id'],
-        'patient_mode'           => $data['patient_mode'],
-        'is_new_patient'         => isset($data['is_new_patient']) ? (int)$data['is_new_patient'] : 1,
-        'appointment_date'       => $data['appointment_date'],
-        'appointment_time'       => $data['appointment_time'],
-        'reason_for_appointment' => $data['reason_for_appointment'],
-        'consultant_id'          => $data['consultant_id'],
-        'status'                 => isset($data['status']) ? $data['status'] : 'pending',
-        'notes'                  => !empty($data['notes']) ? trim($data['notes']) : null,
-    ];
-    
-    // Update or Insert
-    if ($id) {
-        $save_data['updated_at'] = date('Y-m-d H:i:s');
-        $this->db->where('id', $id);
-        $this->db->update($this->table, $save_data);
-        
-        log_activity('Hospital Appointment Updated [ID: ' . $id . ']');
-        return ['success' => true, 'message' => 'Appointment updated successfully', 'id' => $id];
-    } else {
-        $save_data['appointment_number'] = $this->generate_appointment_number();
-        $save_data['created_by'] = get_staff_user_id();
-        $save_data['created_at'] = date('Y-m-d H:i:s');
-        
-        $this->db->insert($this->table, $save_data);
-        $insert_id = $this->db->insert_id();
-        
-        log_activity('Hospital Appointment Created [Number: ' . $save_data['appointment_number'] . ']');
-        return [
-            'success' => true, 
-            'message' => 'Appointment created successfully', 
-            'id' => $insert_id,
-            'appointment_number' => $save_data['appointment_number']
-        ];
-    }
-}
-
-/**
- * Validate appointment data
- */
-private function validate_appointment($data)
-{
-    $errors = [];
-    
-    if (empty($data['patient_id'])) {
-        $errors[] = 'Patient is required';
-    }
-    
-    if (empty($data['appointment_date'])) {
-        $errors[] = 'Appointment date is required';
-    }
-    
-    if (empty($data['appointment_time'])) {
-        $errors[] = 'Appointment time is required';
-    }
-    
-    if (empty($data['reason_for_appointment'])) {
-        $errors[] = 'Reason for appointment is required';
-    }
-    
-    if (empty($data['consultant_id'])) {
-        $errors[] = 'Consultant is required';
-    }
-    
-    return $errors;
-}
     
     /**
      * Confirm appointment
@@ -259,18 +286,14 @@ private function validate_appointment($data)
     {
         $stats = [];
         
-        // Total appointments
         $stats['total'] = $this->db->count_all_results($this->table);
         
-        // Pending
         $this->db->where('status', 'pending');
         $stats['pending'] = $this->db->count_all_results($this->table);
         
-        // Confirmed
         $this->db->where('status', 'confirmed');
         $stats['confirmed'] = $this->db->count_all_results($this->table);
         
-        // Today's appointments
         $this->db->where('appointment_date', date('Y-m-d'));
         $stats['today'] = $this->db->count_all_results($this->table);
         
@@ -291,9 +314,9 @@ private function validate_appointment($data)
             $this->db->or_like('name', $search);
             $this->db->or_like('mobile_number', $search);
             $this->db->group_end();
-            $this->db->limit(50); // Limit search results
+            $this->db->limit(50);
         } else {
-            $this->db->limit(100); // Show only recent 100 by default
+            $this->db->limit(100);
         }
         
         $this->db->order_by('created_at', 'DESC');
