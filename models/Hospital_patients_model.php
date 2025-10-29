@@ -594,4 +594,6 @@ public function delete($id)
     
     return ['success' => false, 'message' => 'Failed to delete patient'];
 }
+
+
 }

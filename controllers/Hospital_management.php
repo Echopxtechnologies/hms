@@ -495,31 +495,67 @@ if ($this->input->post('is_new_patient') == '1' || $this->input->post('patient_m
         }
     }
     
-    /**
-     * Download patient document
-     */
-    public function download_document($document_id)
-    {
-        if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
-            access_denied('Patient Records');
-        }
-        
-        $document = $this->hospital_patients_model->get_document_file($document_id);
-        
-        if (!$document) {
-            set_alert('danger', 'Document not found');
-            redirect($_SERVER['HTTP_REFERER']);
-        }
-        
-        header('Content-Type: ' . $document->file_type);
-        header('Content-Disposition: attachment; filename="' . $document->original_filename . '"');
-        header('Content-Length: ' . strlen($document->file_data));
-        header('Cache-Control: private, max-age=0, must-revalidate');
-        header('Pragma: public');
-        
-        echo $document->file_data;
-        exit;
+/**
+ * Save/Update patient information
+ */
+public function save_patient()
+{
+    if (!$this->input->is_ajax_request()) {
+        show_404();
     }
+    
+    if (!is_receptionist() && !has_permission('reception_management', '', 'edit')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'No permission']);
+        return;
+    }
+    
+    $patient_id = $this->input->post('id');
+    
+    $data = [
+        'name'                      => $this->input->post('name'),
+        'gender'                    => $this->input->post('gender'),
+        'dob'                       => $this->input->post('dob'),
+        'age'                       => $this->input->post('age'),
+        'address'                   => $this->input->post('address'),
+        'address_landmark'          => $this->input->post('address_landmark'),
+        'city'                      => $this->input->post('city'),
+        'state'                     => $this->input->post('state'),
+        'pincode'                   => $this->input->post('pincode'),
+        'phone'                     => $this->input->post('phone'),
+        'mobile_number'             => $this->input->post('mobile_number'),
+        'email'                     => $this->input->post('email'),
+        'reason_for_appointment'    => $this->input->post('reason_for_appointment'),
+        'patient_type'              => $this->input->post('patient_type'),
+        'fee_payment'               => $this->input->post('fee_payment'),
+    ];
+    
+    $result = $this->hospital_patients_model->update_patient_info($patient_id, $data);
+    
+    header('Content-Type: application/json');
+    echo json_encode($result);
+}
+  /**
+ * Download patient document (QUICK FIX)
+ */
+public function download_document($document_id = null)
+{
+    $document_id = intval($document_id);
+    
+    if ($document_id <= 0) {
+        show_404();
+    }
+    
+    $this->load->model('hospital_patients_model');
+    $document = $this->hospital_patients_model->get_document_file($document_id);
+    
+    if (!$document) {
+        show_404();
+    }
+    
+    $this->load->helper('download');
+    force_download($document->original_filename, $document->file_data);
+}
     
     /**
      * Delete patient document
@@ -541,6 +577,54 @@ if ($this->input->post('is_new_patient') == '1' || $this->input->post('patient_m
         header('Content-Type: application/json');
         echo json_encode($result);
     }
+
+    
+/**
+ * Manage patient (edit patient form)
+ * Shows the patient edit form with document management
+ */
+public function manage_patient($id = null)
+{
+    if (!$id) {
+        redirect(admin_url('hospital_management/patient_records'));
+    }
+    
+    if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
+        access_denied('Patient Records');
+    }
+    
+    $data['patient'] = $this->hospital_patients_model->get($id);
+    
+    if (!$data['patient']) {
+        show_404();
+    }
+    
+    $data['patient_types'] = $this->hospital_patients_model->get_patient_types();
+    $data['title'] = 'Update Patient Information';
+    
+    $this->load->view('manage_patient', $data);
+}
+
+/**
+ * View patient details
+ * Shows complete patient information with documents and appointment history
+ */
+public function view_patient($id)
+{
+    if (!is_receptionist() && !has_permission('reception_management', '', 'view')) {
+        access_denied('Patient Records');
+    }
+    
+    $data['patient'] = $this->hospital_patients_model->get($id);
+    
+    if (!$data['patient']) {
+        show_404();
+    }
+    
+    $data['title'] = 'Patient Details - ' . $data['patient']->name;
+    
+    $this->load->view('view_patient', $data);
+}
     
     /**
      * Confirm appointment

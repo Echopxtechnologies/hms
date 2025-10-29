@@ -1,7 +1,32 @@
 <?php defined('BASEPATH') or exit('No direct script access allowed'); ?>
 <?php init_head(); ?>
 
+<?php
+// Get patient documents and appointments
+$this->load->model('hospital_patients_model');
+$this->load->model('hospital_appointments_model');
+
+$documents = $this->hospital_patients_model->get_patient_documents($patient->id);
+
+// Get appointments for this patient
+$this->db->select(
+    db_prefix() . 'hospital_appointments.*, ' .
+    'COALESCE(' . db_prefix() . 'staff.firstname, "Not Assigned") as consultant_firstname, ' .
+    'COALESCE(' . db_prefix() . 'staff.lastname, "") as consultant_lastname'
+);
+$this->db->join(
+    db_prefix() . 'staff',
+    db_prefix() . 'staff.staffid = ' . db_prefix() . 'hospital_appointments.consultant_id',
+    'left'
+);
+$this->db->where(db_prefix() . 'hospital_appointments.patient_id', $patient->id);
+$this->db->order_by(db_prefix() . 'hospital_appointments.appointment_date', 'DESC');
+$this->db->order_by(db_prefix() . 'hospital_appointments.appointment_time', 'DESC');
+$appointments = $this->db->get(db_prefix() . 'hospital_appointments')->result();
+?>
+
 <style>
+/* Patient View Header */
 .patient-view-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: #ffffff;
@@ -86,6 +111,11 @@
     color: #1976d2;
 }
 
+.badge-danger {
+    background: #ffebee;
+    color: #c62828;
+}
+
 .action-buttons {
     padding: 20px 25px;
     background: #f8f9fa;
@@ -136,12 +166,200 @@
     color: #333;
     text-decoration: none;
 }
+
+/* Documents Section */
+.documents-wrapper {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 25px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.section-header-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+}
+
+.documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.document-card {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 15px;
+    transition: all 0.2s;
+}
+
+.document-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.document-icon {
+    font-size: 35px;
+    color: #666;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.document-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 5px;
+    word-break: break-word;
+}
+
+.document-type {
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.document-date {
+    font-size: 10px;
+    color: #999;
+    margin-bottom: 10px;
+}
+
+.document-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-doc-action {
+    flex: 1;
+    padding: 5px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+    text-align: center;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.btn-view {
+    background: #2196F3;
+    color: #fff;
+    border: 1px solid #2196F3;
+}
+
+.btn-view:hover {
+    background: #1976D2;
+    color: #fff;
+    text-decoration: none;
+}
+
+.no-documents {
+    text-align: center;
+    padding: 30px 20px;
+    color: #999;
+}
+
+.no-documents i {
+    font-size: 50px;
+    margin-bottom: 10px;
+    display: block;
+}
+
+/* Appointments Section */
+.appointments-wrapper {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 25px;
+}
+
+.appointments-table {
+    width: 100%;
+    margin-top: 15px;
+}
+
+.appointments-table th {
+    background: #f8f9fa;
+    padding: 12px;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e0e0e0;
+    font-size: 13px;
+}
+
+.appointments-table td {
+    padding: 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+}
+
+.appointments-table tr:last-child td {
+    border-bottom: none;
+}
+
+.appointments-table tr:hover {
+    background: #f8f9fa;
+}
+
+.badge-status {
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-pending {
+    background: #fff3e0;
+    color: #f57c00;
+}
+
+.badge-confirmed {
+    background: #e8f5e9;
+    color: #388e3c;
+}
+
+.badge-cancelled {
+    background: #ffebee;
+    color: #d32f2f;
+}
+
+.badge-completed {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.no-appointments {
+    text-align: center;
+    padding: 40px 20px;
+    color: #999;
+}
+
+.no-appointments i {
+    font-size: 60px;
+    margin-bottom: 15px;
+    display: block;
+}
 </style>
 
 <div id="wrapper">
     <div class="content">
         <div class="row">
             <div class="col-md-12">
+                <!-- PATIENT DETAILS PANEL -->
                 <div class="panel_s" style="margin-bottom: 0;">
                     <!-- Patient Header -->
                     <div class="patient-view-header">
@@ -286,7 +504,7 @@
                             <div class="detail-label">Reason for Appointment</div>
                             <div class="detail-value">
                                 <span class="badge-custom badge-warning">
-                                    <?php echo ucfirst($patient->reason_for_appointment); ?>
+                                    <?php echo ucfirst(str_replace('_', ' ', $patient->reason_for_appointment)); ?>
                                 </span>
                             </div>
                         </div>
@@ -312,6 +530,9 @@
                                 <?php 
                                 if ($patient->registered_other_hospital === 1) {
                                     echo 'Yes';
+                                    if ($patient->other_hospital_patient_id) {
+                                        echo ' (ID: ' . htmlspecialchars($patient->other_hospital_patient_id) . ')';
+                                    }
                                 } elseif ($patient->registered_other_hospital === 0) {
                                     echo 'No';
                                 } else {
@@ -327,6 +548,9 @@
                                 <?php 
                                 if ($patient->recommended_to_hospital === 1) {
                                     echo 'Yes';
+                                    if ($patient->recommended_by) {
+                                        echo ' (By: ' . htmlspecialchars($patient->recommended_by) . ')';
+                                    }
                                 } elseif ($patient->recommended_to_hospital === 0) {
                                     echo 'No';
                                 } else {
@@ -335,6 +559,19 @@
                                 ?>
                             </div>
                         </div>
+                        
+                        <?php if ($patient->has_membership) { ?>
+                        <div class="detail-row">
+                            <div class="detail-label">Membership</div>
+                            <div class="detail-value">
+                                <?php echo htmlspecialchars($patient->membership_type); ?>
+                                (<?php echo htmlspecialchars($patient->membership_number); ?>)
+                                <?php if ($patient->membership_expiry_date) { ?>
+                                    <br><small>Expires: <?php echo date('d M Y', strtotime($patient->membership_expiry_date)); ?></small>
+                                <?php } ?>
+                            </div>
+                        </div>
+                        <?php } ?>
                         
                         <div class="detail-row">
                             <div class="detail-label">Status</div>
@@ -382,6 +619,150 @@
                 </div>
             </div>
         </div>
+        
+        <!-- DOCUMENTS SECTION -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="documents-wrapper">
+                    <div class="section-header">
+                        <h4 class="section-header-title">
+                            <i class="fa fa-file-text-o"></i> Patient Documents
+                        </h4>
+                    </div>
+                    
+                    <?php if (empty($documents)) { ?>
+                        <div class="no-documents">
+                            <i class="fa fa-folder-open-o"></i>
+                            <p>No documents uploaded yet</p>
+                        </div>
+                    <?php } else { ?>
+                        <div class="documents-grid">
+                            <?php foreach ($documents as $doc) { 
+                                // Get file icon based on type
+                                $icon = 'fa-file-o';
+                                if (strpos($doc->file_type, 'image') !== false) {
+                                    $icon = 'fa-file-image-o';
+                                } elseif (strpos($doc->file_type, 'pdf') !== false) {
+                                    $icon = 'fa-file-pdf-o';
+                                } elseif (strpos($doc->file_type, 'word') !== false || strpos($doc->file_type, 'document') !== false) {
+                                    $icon = 'fa-file-word-o';
+                                }
+                            ?>
+                                <div class="document-card">
+                                    <div class="document-icon">
+                                        <i class="fa <?php echo $icon; ?>"></i>
+                                    </div>
+                                    <div class="document-name"><?php echo htmlspecialchars($doc->original_filename); ?></div>
+                                    <div class="document-type">
+                                        <i class="fa fa-tag"></i> <?php echo htmlspecialchars($doc->document_type); ?>
+                                    </div>
+                                    <div class="document-date">
+                                        <i class="fa fa-calendar"></i> <?php echo date('d M Y', strtotime($doc->created_at)); ?>
+                                    </div>
+                                    <div class="document-actions">
+                                        <a href="<?php echo admin_url('hospital_management/download_document/' . $doc['id']); ?>" 
+                                           class="btn-doc-action btn-view"
+                                           target="_blank">
+                                            <i class="fa fa-download"></i> Download
+                                        </a>
+                                    </div>
+                                </div>
+                            <?php } ?>
+                        </div>
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
+        
+        <!-- APPOINTMENTS HISTORY SECTION -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="appointments-wrapper">
+                    <div class="section-header">
+                        <h4 class="section-header-title">
+                            <i class="fa fa-calendar-check-o"></i> Appointment History
+                        </h4>
+                    </div>
+                    
+                    <?php if (empty($appointments)) { ?>
+                        <div class="no-appointments">
+                            <i class="fa fa-calendar-times-o"></i>
+                            <p>No appointments found for this patient</p>
+                        </div>
+                    <?php } else { ?>
+                        <div class="table-responsive">
+                            <table class="table appointments-table">
+                                <thead>
+                                    <tr>
+                                        <th>Appointment #</th>
+                                        <th>Date & Time</th>
+                                        <th>Consultant</th>
+                                        <th>Reason</th>
+                                        <th>Mode</th>
+                                        <th>Status</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($appointments as $apt) { 
+                                        // Determine status badge class
+                                        $status_class = 'badge-pending';
+                                        if ($apt->status == 'confirmed') {
+                                            $status_class = 'badge-confirmed';
+                                        } elseif ($apt->status == 'cancelled') {
+                                            $status_class = 'badge-cancelled';
+                                        } elseif ($apt->status == 'completed') {
+                                            $status_class = 'badge-completed';
+                                        }
+                                    ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?php echo $apt->appointment_number; ?></strong>
+                                            </td>
+                                            <td>
+                                                <i class="fa fa-calendar"></i> <?php echo date('d M Y', strtotime($apt->appointment_date)); ?>
+                                                <br>
+                                                <i class="fa fa-clock-o"></i> <?php echo date('h:i A', strtotime($apt->appointment_time)); ?>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                $consultant_name = trim($apt->consultant_firstname . ' ' . $apt->consultant_lastname);
+                                                echo htmlspecialchars($consultant_name);
+                                                ?>
+                                            </td>
+                                            <td><?php echo ucfirst(str_replace('_', ' ', $apt->reason_for_appointment)); ?></td>
+                                            <td>
+                                                <span class="badge-custom badge-info">
+                                                    <?php echo $apt->patient_mode == 'appointment' ? 'Appointment' : 'Walk In'; ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge-status <?php echo $status_class; ?>">
+                                                    <?php echo $apt->status; ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                if ($apt->notes) {
+                                                    echo nl2br(htmlspecialchars($apt->notes));
+                                                } else {
+                                                    echo '<span style="color: #999;">-</span>';
+                                                }
+                                                ?>
+                                            </td>
+                                        </tr>
+                                    <?php } ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #f0f0f0;">
+                            <strong>Total Appointments:</strong> <?php echo count($appointments); ?>
+                        </div>
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -389,7 +770,7 @@
 
 <script>
 function deletePatient(id) {
-    if (confirm('Are you sure you want to delete this patient record?\n\nThis action cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this patient record?\n\nThis action cannot be undone and will delete all associated appointments and documents.')) {
         $.ajax({
             url: admin_url + 'hospital_management/delete_patient/' + id,
             type: 'POST',
