@@ -208,6 +208,7 @@ public function save($data, $files = [])
         'is_new_patient'            => isset($data['is_new_patient']) ? (int)$data['is_new_patient'] : 1,
         'mode'                      => isset($data['mode']) ? $data['mode'] : 'appointment',
         'registered_other_hospital' => isset($data['registered_other_hospital']) ? (int)$data['registered_other_hospital'] : null,
+        'other_hospital_patient_id' => !empty($data['other_hospital_patient_id']) ? trim($data['other_hospital_patient_id']) : null,
         'name'                      => trim($data['name']),
         'gender'                    => $data['gender'],
         'dob'                       => !empty($data['dob']) ? $data['dob'] : null,
@@ -427,6 +428,10 @@ public function update_patient_info($patient_id, $data, $files = [])
     
     if (isset($data['registered_other_hospital'])) {
         $update_data['registered_other_hospital'] = (int)$data['registered_other_hospital'];
+    }
+
+    if (isset($data['other_hospital_patient_id'])) {
+    $update_data['other_hospital_patient_id'] = !empty($data['other_hospital_patient_id']) ? trim($data['other_hospital_patient_id']) : null;
     }
     
     // Personal details

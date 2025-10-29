@@ -494,6 +494,16 @@
                                     </div>
                                 </div>
                                 
+                                <!-- Other Hospital Patient ID - shown only when Yes is selected -->
+                                <div class="col-md-6" id="other_hospital_id_section" style="display:none;">
+                                    <div class="form-group">
+                                        <label class="control-label">Patient ID of Other Hospital</label>
+                                        <input type="text" name="other_hospital_patient_id" id="other_hospital_patient_id" 
+                                               class="form-control" placeholder="Enter patient ID from other hospital">
+                                        <small class="text-muted">Enter the patient registration ID from the other hospital</small>
+                                    </div>
+                                </div>
+
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label class="control-label">Fee Payment?</label>
@@ -807,6 +817,15 @@ $(document).ready(function() {
             $('#recommendation_details').slideUp();
         }
     });
+    // Other Hospital Registration Toggle
+    $('input[name="registered_other_hospital"]').on('change', function() {
+        if ($(this).val() == '1') {
+            $('#other_hospital_id_section').slideDown();
+        } else {
+            $('#other_hospital_id_section').slideUp();
+            $('#other_hospital_patient_id').val(''); // Clear value when hidden
+        }
+    });
     
     // Membership Toggle
     $('.membership_toggle').on('change', function() {
@@ -1016,7 +1035,13 @@ function loadPatientData(patientId, callback) {
                 // Radio buttons
                 $('input[name="registered_other_hospital"][value="' + (p.registered_other_hospital || '0') + '"]').prop('checked', true);
                 $('input[name="fee_payment"][value="' + (p.fee_payment || 'not_applicable') + '"]').prop('checked', true);
-                
+                 if (p.registered_other_hospital == '1') {
+                    $('#other_hospital_id_section').show();
+                    $('#other_hospital_patient_id').val(p.other_hospital_patient_id || '');
+                } else {
+                    $('#other_hospital_id_section').hide();
+                    $('#other_hospital_patient_id').val('');
+                }
                 // Recommendation
                 const recommended = p.recommended_to_hospital == '1' ? '1' : '0';
                 $('input[name="recommended_to_hospital"][value="' + recommended + '"]').prop('checked', true);

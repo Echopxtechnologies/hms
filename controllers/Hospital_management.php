@@ -379,7 +379,8 @@ class Hospital_management extends AdminController
         // Patient data (if provided - for new patients or existing patient updates)
         $patient_data = [];
         
-        if ($this->input->post('is_new_patient') == '1' || !empty($this->input->post('update_patient_info'))) {
+        // Collect patient data for: 1) New patients, OR 2) Walk-in mode (existing patient update)
+if ($this->input->post('is_new_patient') == '1' || $this->input->post('patient_mode') == 'walk_in') {
             $patient_data = [
                 'is_new_patient'            => $this->input->post('is_new_patient'),
                 'mode'                      => $this->input->post('patient_mode'),
